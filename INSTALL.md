@@ -1,4 +1,4 @@
-# Installation Guide — OpenTTD Archipelago
+# Installation Guide — OpenTTD Cargolock
 
 ## Requirements
 
@@ -10,7 +10,7 @@
 
 ## Step 1 — Install the APWorld
 
-1. Download `openttd.apworld` from the [latest release](../../releases/latest)
+1. Download `openttd_cargolock.apworld` from the [latest release](../../releases/latest)
 2. Place it in your Archipelago `custom_worlds/` folder:
    - Default path: `C:\ProgramData\Archipelago\custom_worlds\`
    - If the folder doesn't exist, create it manually
@@ -25,11 +25,11 @@ Create a YAML file for your player slot. Minimum required:
 
 ```yaml
 name: YourName
-game: OpenTTD
+game: OpenTTD Cargolock
 
-OpenTTD:
-  win_condition: company_value
-  win_condition_company_value: 50000000
+OpenTTD Cargolock:
+   starting_vehicle_type: random
+   enable_shop: true
 ```
 
 See [docs/yaml_options.md](docs/yaml_options.md) for all options.
@@ -76,7 +76,7 @@ See [docs/yaml_options.md](docs/yaml_options.md) for all options.
 - Make sure you extracted the full ZIP. The `baseset/` folder must be present next to `openttd.exe`.
 
 **APWorld not showing in generator**
-- Verify `openttd.apworld` is in `C:\ProgramData\Archipelago\custom_worlds\` and restart the Archipelago Launcher.
+- Verify `openttd_cargolock.apworld` is in `C:\ProgramData\Archipelago\custom_worlds\` and restart the Archipelago Launcher.
 
 **AP Commands in-game**
 - Open the console with the `` ` `` (backtick) key and type `ap !hint <item>` to send commands directly to the Archipelago server.

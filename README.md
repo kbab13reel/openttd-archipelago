@@ -1,69 +1,77 @@
-# OpenTTD Archipelago
+# OpenTTD Cargolock
 
-A full [Archipelago](https://archipelago.gg) multiworld randomizer integration for **OpenTTD 15.2**.
+An [Archipelago](https://archipelago.gg) multiworld integration for **OpenTTD 15.2** with cargo-gated progression, progressive vehicle tiers, mission-based checks, and multiplayer-aware slot behavior.
 
-This project began as a fork of solida1987's OpenTTD Archipelago implementation. It started as a feature fork and later evolved into a separate design direction maintained in this repository.
+This repository began as a fork of solida1987's OpenTTD Archipelago implementation and evolved into a separate gameplay direction.
 
-All 202 vanilla vehicles are locked at game start and randomized into the multiworld item pool. Complete procedurally generated missions to send checks. Receive vehicles, cash injections, cargo bonuses — or suffer traps like Recession, Breakdown Wave, and forced Bank Loans sent by other players.
+World identifier: **OpenTTD Cargolock**
 
-> **Status: Beta** — Core gameplay is complete and stable. See [Known Limitations](#known-limitations).
+> Status: Beta. Core gameplay is stable and actively iterated.
 
 ---
 
 ## Features
 
-- **202 vehicles randomized** — all climates (Temperate, Arctic, Tropical, Toyland), all types (trains, wagons, road vehicles, aircraft, ships)
-- **11 mission types** — transport cargo, earn profit, build stations, connect cities, buy from shop, and more
-- **7 traps** — Breakdown Wave, Recession, Maintenance Surge, Signal Failure, Fuel Shortage, Forced Bank Loan, Industry Closure
-- **8 utility items** — Cash Injections (£50k/£200k/£500k), Loan Reduction, Cargo Bonus 2×, Reliability Boost, Station Upgrade, Town Growth
-- **5 win conditions** — Company Value, Monthly Profit, Vehicle Count, Town Population, Cargo Delivered
-- **Death Link** — train crashes, road vehicle hits, and aircraft crashes all send deaths to the multiworld
-- **Dynamic pool scaling** — mission and shop counts scale automatically with player count (1→24 players)
-- **56 YAML options** — configure map size, climate, economy, vehicle limits, win conditions, and individual trap toggles
+- Cargo lock progression: your company cannot transport cargo that is not unlocked.
+- Progressive vehicle tiers: train, road, aircraft, and ship unlocks are progressive instead of one-item-per-vehicle.
+- Static mission location set with repeatable gameplay structure.
+- Optional shop with configurable slot count, tiers, and costs.
+- Multiplayer support:
+  - Coop mode: multiple people in one company using one AP slot.
+  - Multi-company mode: multiple companies mapped to different AP slots.
+- Universal Tracker yaml-less compatible: tracker regeneration can run from slot data without a player YAML.
 
 ---
 
-## Download
+## Install
 
-### Play (Windows, standalone)
+1. Build or download the patched OpenTTD binary from this project.
+2. Place the APWorld package in Archipelago custom worlds as `openttd_cargolock.apworld`.
+3. Restart Archipelago after adding or updating the package.
+4. Verify only one installed world registers as OpenTTD Cargolock.
 
-1. Download `OpenTTD-AP-<version>-windows-x64.zip` from [Releases](../../releases)
-2. Extract anywhere — OpenGFX and OpenSFX are included, no separate OpenTTD install needed
-3. Download `openttd.apworld` from the same release
-4. Place `openttd.apworld` in your Archipelago `worlds/` folder
-5. Generate a multiworld using your YAML (see [YAML Setup](#yaml-setup))
-6. Launch `openttd.exe`, click **Archipelago** in the main menu, enter your connection details
-
-### Install APWorld only (if you already have the client)
-
-Download `openttd.apworld` and place it in your Archipelago installation's `worlds/` folder.
+If you previously used an older OpenTTD APWorld package, disable or remove it to avoid duplicate game registration.
 
 ---
 
 ## YAML Setup
 
-Add an `openttd` section to your Archipelago YAML:
+Use this game identifier in your player file:
 
 ```yaml
 name: YourName
-game: OpenTTD
+game: OpenTTD Cargolock
 
-OpenTTD:
-  win_condition: company_value       # company_value | monthly_profit | vehicle_count | town_population | cargo_delivered
-  win_condition_value: 5000000       # Target value for the chosen condition
-  starting_vehicle_type: trains      # trains | road | aircraft | ships | random
-  landscape: temperate               # temperate | arctic | tropical | toyland
-  mission_count: 300                 # Relative scaler (300 = ×1.0 baseline)
-  enable_traps: true
-  death_link: false
+OpenTTD Cargolock:
+  starting_vehicle_type: random
+  mission_count: 300
+  enable_shop: true
   map_size_x: 256
   map_size_y: 256
-  start_year: 1950
-  max_trains: 500
-  max_loan: 500000
 ```
 
-See [docs/yaml_options.md](docs/yaml_options.md) for all 56 options with descriptions and valid ranges.
+Notes:
+- Use `OpenTTD Cargolock` exactly as shown.
+- This world is UT yaml-less compatible, but normal Archipelago generation still supports player YAML files as usual.
+
+---
+
+## Multiplayer Host Order
+
+1. Host connects Archipelago from the OpenTTD main menu.
+2. Host starts the AP map (new generation) or loads an existing AP save.
+3. After the AP map is live, start OpenTTD multiplayer from that running game.
+4. Other players join the OpenTTD server and use the intended company/slot mapping.
+
+Keep slot to company assignments consistent for the life of a save.
+
+---
+
+## Universal Tracker
+
+OpenTTD Cargolock supports Universal Tracker yaml-less regeneration through slot data.
+
+This means tracker-side world reconstruction does not require a local player YAML for this world.
 
 ---
 
@@ -71,28 +79,21 @@ See [docs/yaml_options.md](docs/yaml_options.md) for all 56 options with descrip
 
 ### Requirements
 
-- Windows 10/11 (MSVC build only — Linux/Mac builds not currently tested)
-- [Visual Studio 2022](https://visualstudio.microsoft.com/) with C++ workload
-- [vcpkg](https://vcpkg.io/) (for dependencies)
+- Windows 10/11
+- Visual Studio 2022 with C++ workload
+- vcpkg
 - CMake 3.21+
 
-### Steps
+### Build
 
 ```powershell
-# 1. Clone this repo
-git clone https://github.com/solida1987/openttd-archipelago
+git clone https://github.com/kbab13reel/openttd-archipelago
 cd openttd-archipelago
 
-# 2. Install dependencies via vcpkg
-vcpkg install  # reads vcpkg.json automatically
+vcpkg install
 
-# 3. Configure and build
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE="<path-to-vcpkg>/scripts/buildsystems/vcpkg.cmake"
 cmake --build build --config Release
-
-# 4. Package a standalone ZIP
-.\scripts\Package-OpenTTD-AP.ps1
-# Output: dist\OpenTTD-AP-<version>-windows-x64.zip
 ```
 
 ---
@@ -101,25 +102,24 @@ cmake --build build --config Release
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| "Maintain X% rating for N months" mission | Low | Counts qualifying stations now instead of tracking sustained rating over time. Completable but slightly easier than described |
-| WebSocket compression | Low | Compressed connections not supported. Archipelago server shows a warning but connection works normally |
-| Multiplayer (multiple companies) | Future | All logic assumes `_local_company`. Co-op/competition mode not supported |
+| WebSocket compression | Low | Archipelago may warn, connection remains usable. |
+| Multi-company edge cases | Medium | Slot/company mapping mistakes can desync expected behavior. |
 
 ---
 
 ## License
 
-This project is a fork of [OpenTTD](https://github.com/OpenTTD/OpenTTD) and is licensed under the **GNU General Public License v2** — the same license as OpenTTD.
+This project is a fork of [OpenTTD](https://github.com/OpenTTD/OpenTTD) and is licensed under GPL v2.
 
-The APWorld (`openttd.apworld`) is licensed under **MIT**.
+The APWorld package is licensed under MIT.
 
-OpenTTD is copyright © the OpenTTD contributors. See [COPYING.md](COPYING.md) for the full GPL v2 text.
+See [COPYING.md](COPYING.md) for full GPL v2 text.
 
 ---
 
 ## Credits
 
-- **OpenTTD** — the base game, [openttd.org](https://www.openttd.org)
-- **Archipelago** — the multiworld randomizer framework, [archipelago.gg](https://archipelago.gg)
-- Original OpenTTD Archipelago implementation by [solida1987](https://github.com/solida1987)
-- OpenTTD Cargolock fork and ongoing development by this repository's maintainers
+- OpenTTD contributors for the base game.
+- Archipelago team for the multiworld framework.
+- Original OpenTTD Archipelago implementation by [solida1987](https://github.com/solida1987).
+- OpenTTD Cargolock fork development by this repository maintainers and contributors.
