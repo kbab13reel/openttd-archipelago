@@ -139,6 +139,13 @@ else()
     # if(REV_ISSTABLETAG AND NOT (REV_VERSION STREQUAL "${REV_MAJOR}.${REV_MINOR}"))
     #     message(FATAL_ERROR "Tag (${REV_VERSION}) doesn't match internal version (${REV_MAJOR}.${REV_MINOR})")
     # endif()
+    # Set display version: use AP release version if provided, else git-based version
+    if(AP_RELEASE_VERSION)
+        set(REV_DISPLAY_VERSION "AP Cargolock v${AP_RELEASE_VERSION}")
+    else()
+        set(REV_DISPLAY_VERSION "${REV_VERSION}")
+    endif()
+
     message(STATUS "Generating rev.cpp")
     configure_file("${CMAKE_SOURCE_DIR}/src/rev.cpp.in"
             "${FIND_VERSION_BINARY_DIR}/rev.cpp")

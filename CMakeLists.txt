@@ -5,12 +5,12 @@ if(NOT BINARY_NAME)
 endif()
 
 project(${BINARY_NAME}
-    VERSION 0.1.1
+    VERSION 15.2
     LANGUAGES CXX
 )
 
 set(AP_RELEASE_PACKAGE_NAME "openttd-cargolock-archipelago" CACHE STRING "Base filename to use for release ZIP packages")
-set(AP_RELEASE_VERSION "" CACHE STRING "Optional release version for package filenames, e.g. 0.1.0")
+set(AP_RELEASE_VERSION "0.1.2" CACHE STRING "Optional release version for package filenames, e.g. 0.1.0")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "In-source builds not allowed. Please run \"cmake ..\" from the build directory. You may need to delete \"${CMAKE_SOURCE_DIR}/CMakeCache.txt\" first.")
@@ -33,8 +33,8 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET 10.15)
 if(NOT CMAKE_INSTALL_DATADIR)
     set(CMAKE_INSTALL_DATADIR "share/games")
 endif()
+set(CMAKE_INSTALL_BINDIR "games")
 if(NOT CMAKE_INSTALL_BINDIR)
-    set(CMAKE_INSTALL_BINDIR "games")
 endif()
 include(GNUInstallDirs)
 
@@ -78,6 +78,7 @@ add_custom_target(find_version
                 -DREV_MAJOR=${PROJECT_VERSION_MAJOR}
                 -DREV_MINOR=${PROJECT_VERSION_MINOR}
                 -DWINDOWS=${WIN32}
+                -DAP_RELEASE_VERSION=${AP_RELEASE_VERSION}
                 -P "${CMAKE_SOURCE_DIR}/cmake/scripts/FindVersion.cmake"
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         BYPRODUCTS ${GENERATED_SOURCE_FILES}

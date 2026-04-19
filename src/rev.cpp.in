@@ -35,7 +35,7 @@ bool IsReleasedVersion()
  *
  * <modified> shows a "M", if the binary is made from modified source code.
  */
-const std::string _openttd_revision = "${REV_VERSION}";
+const std::string _openttd_revision = "${REV_DISPLAY_VERSION}";
 
 /**
  * The text version of OpenTTD's build date.
