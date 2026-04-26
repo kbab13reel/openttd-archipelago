@@ -101,6 +101,14 @@ static bool _ap_colour_items_in_pool = false; ///< True when the slot data conta
 static std::set<std::string> _ap_purchased_shop_locations;
 static std::set<std::string> _ap_completed_mission_locations;
 
+/* Declared early — also used below in AP_OnItemReceived before the main block */
+static APSlotData _ap_pending_sd;
+static std::deque<std::function<void()>> _ap_deferred_cmds;
+
+/* Per-utility unlock state (indexed: 0=Bridges, 1=Tunnels, 2=Canals, 3=Terraforming) */
+static bool _ap_utility_unlocked[4] = {};
+static constexpr const char *AP_UTILITY_NAMES[4] = {"Bridges", "Tunnels", "Canals", "Terraforming"};
+
 /** True when this client is the primary (first) AP connector for its company.
  *  Only the primary posts money commands to avoid double cash in coop. */
 static bool _ap_is_primary = false;
@@ -155,6 +163,14 @@ static CargoType AP_FindCargoType(const std::string &name)
 static uint64_t _ap_cumul_cargo[NUM_CARGO]      = {};  ///< Cargo delivered in completed periods
 static Money    _ap_cumul_profit                = 0;   ///< Profit earned in completed periods
 static bool     _ap_stats_initialized          = false;
+
+/* Per-vehicle-type cargo counters: index 0=train, 1=road, 2=ship, 3=aircraft */
+static constexpr int AP_VTYPE_TRAIN    = 0;
+static constexpr int AP_VTYPE_ROAD     = 1;
+static constexpr int AP_VTYPE_SHIP     = 2;
+static constexpr int AP_VTYPE_AIRCRAFT = 3;
+static constexpr int AP_VTYPE_COUNT    = 4;
+static uint64_t _ap_cumul_cargo_by_vtype[AP_VTYPE_COUNT][NUM_CARGO] = {};
 static std::map<std::string, int> _ap_received_item_counts; ///< Count of each received item (all types, for inventory display and win-condition checks)
 
 static void AP_RefreshMoneyDisplays()
@@ -169,9 +185,29 @@ static void AP_RefreshMoneyDisplays()
 static uint32_t _ap_snap_cargo[NUM_CARGO]       = {};
 static Money    _ap_snap_profit                 = 0;
 
+static int AP_VehicleTypeToIndex(VehicleType vt)
+{
+	if (vt == VEH_TRAIN)    return AP_VTYPE_TRAIN;
+	if (vt == VEH_ROAD)     return AP_VTYPE_ROAD;
+	if (vt == VEH_SHIP)     return AP_VTYPE_SHIP;
+	if (vt == VEH_AIRCRAFT) return AP_VTYPE_AIRCRAFT;
+	return -1;
+}
+
+static int AP_VehicleKeyToIndex(const std::string &key)
+{
+	if (key == "train")        return AP_VTYPE_TRAIN;
+	if (key == "road_vehicle") return AP_VTYPE_ROAD;
+	if (key == "ship")         return AP_VTYPE_SHIP;
+	if (key == "aircraft")     return AP_VTYPE_AIRCRAFT;
+	return -1;
+}
+
 static void AP_InitSessionStats()
 {
 	for (CargoType i = 0; i < NUM_CARGO; i++) { _ap_cumul_cargo[i] = 0; _ap_snap_cargo[i] = 0; }
+	for (int v = 0; v < AP_VTYPE_COUNT; v++)
+		for (CargoType i = 0; i < NUM_CARGO; i++) _ap_cumul_cargo_by_vtype[v][i] = 0;
 	_ap_cumul_profit      = 0;
 	_ap_snap_profit       = 0;
 	_ap_stats_initialized = false;
@@ -240,6 +276,29 @@ static uint64_t AP_GetTotalCargo(CargoType ct)
 	const Company *c = Company::GetIfValid(_local_company);
 	uint64_t cur = (c != nullptr) ? (uint64_t)c->cur_economy.delivered_cargo[ct] : 0;
 	return _ap_cumul_cargo[ct] + cur;
+}
+
+/**
+ * Get total cargo delivered by a specific vehicle type.
+ * Only counts deliveries recorded via AP_RecordCargoDelivery (no cur_economy breakdown).
+ */
+static uint64_t AP_GetTotalCargoByVehicle(int vtidx, CargoType ct)
+{
+	if (vtidx < 0 || vtidx >= AP_VTYPE_COUNT) return 0;
+	if (ct == INVALID_CARGO || ct >= NUM_CARGO) return 0;
+	return _ap_cumul_cargo_by_vtype[vtidx][ct];
+}
+
+/**
+ * Record a cargo delivery by vehicle type. Called from economy.cpp when the
+ * local company's vehicle delivers cargo to a station.
+ */
+void AP_RecordCargoDelivery(VehicleType vtype, CargoType ct, uint32_t amount)
+{
+	if (ct >= NUM_CARGO) return;
+	int idx = AP_VehicleTypeToIndex(vtype);
+	if (idx < 0) return;
+	_ap_cumul_cargo_by_vtype[idx][ct] += amount;
 }
 
 /* -------------------------------------------------------------------------
@@ -385,6 +444,17 @@ static bool EvaluateMission(APMission &m)
 		current = (IsValidCargoType(ct) && _ap_unlocked_cargo_types[ct]) ? 1 : 0;
 	}
 
+	/* ── "transport_by_vehicle" type ────────────────────────────────
+	 * "Transport {cargo} by {vehicle}" — counts deliveries made by a
+	 * specific vehicle type using AP_RecordCargoDelivery(). */
+	else if (m.type == "transport_by_vehicle") {
+		int vtidx = AP_VehicleKeyToIndex(m.vehicle_key);
+		CargoType ct = AP_FindCargoType(m.cargo);
+		if (vtidx >= 0 && IsValidCargoType(ct)) {
+			current = (int64_t)AP_GetTotalCargoByVehicle(vtidx, ct);
+		}
+	}
+
 	/* Update live progress on the mission (visible in missions window) */
 	m.current_value = current;
 
@@ -521,6 +591,38 @@ bool AP_IsCargoTypeUnlocked(uint8_t cargo_type)
 	if (cargo_type >= NUM_CARGO) return false;
 	if (!AP_IsActive()) return true;
 	return _ap_unlocked_cargo_types[cargo_type];
+}
+
+bool AP_IsBridgesUnlocked()
+{
+	if (!AP_IsActive()) return true;
+	const APSlotData &sd = AP_GetSlotData();
+	if (!sd.lock_bridges) return true;
+	return AP_IsCompanyUtilityUnlocked(_local_company, 0);
+}
+
+bool AP_IsTunnelsUnlocked()
+{
+	if (!AP_IsActive()) return true;
+	const APSlotData &sd = AP_GetSlotData();
+	if (!sd.lock_tunnels) return true;
+	return AP_IsCompanyUtilityUnlocked(_local_company, 1);
+}
+
+bool AP_IsCanalsUnlocked()
+{
+	if (!AP_IsActive()) return true;
+	const APSlotData &sd = AP_GetSlotData();
+	if (!sd.lock_canals) return true;
+	return AP_IsCompanyUtilityUnlocked(_local_company, 2);
+}
+
+bool AP_IsTerraformingUnlocked()
+{
+	if (!AP_IsActive()) return true;
+	const APSlotData &sd = AP_GetSlotData();
+	if (!sd.lock_terraforming) return true;
+	return AP_IsCompanyUtilityUnlocked(_local_company, 3);
 }
 
 static bool AP_IsCargoWagonEngine(const Engine *e)
@@ -806,13 +908,22 @@ static bool AP_UnlockEngineByName(const std::string &name)
             auto it = _ap_engine_map.find(veh);
             if (it != _ap_engine_map.end()) {
                 _ap_unlocked_engine_ids.insert(it->second);
-                Command<CMD_AP_SET_ENGINE_UNLOCK>::Post(cid, it->second.base(), true);
+                /* Defer the DoCommand — drains at 3/tick so a full aircraft tier
+                 * (14+ engines) never trips the server's commands_per_frame limit.
+                 * Local _ap_unlocked_engine_ids is updated immediately for the GUI. */
+                { const uint16_t eb = it->second.base();
+                  _ap_deferred_cmds.push_back([cid, eb]() {
+                      Command<CMD_AP_SET_ENGINE_UNLOCK>::Post(cid, eb, true);
+                  }); }
                 /* Also unlock extras (e.g. "Oil Tanker" → Rail/Mono/Maglev variants) */
                 auto ext = _ap_engine_extras.find(veh);
                 if (ext != _ap_engine_extras.end()) {
                     for (EngineID eid : ext->second) {
                         _ap_unlocked_engine_ids.insert(eid);
-                        Command<CMD_AP_SET_ENGINE_UNLOCK>::Post(cid, eid.base(), true);
+                        const uint16_t xb = eid.base();
+                        _ap_deferred_cmds.push_back([cid, xb]() {
+                            Command<CMD_AP_SET_ENGINE_UNLOCK>::Post(cid, xb, true);
+                        });
                     }
                 }
             }
@@ -911,7 +1022,8 @@ static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintC
  * Pending / deferred state
  * ---------------------------------------------------------------------- */
 
-static APSlotData  _ap_pending_sd;
+/* _ap_pending_sd and _ap_deferred_cmds are declared near the top of the file
+ * (before AP_OnItemReceived) so they are visible at their first point of use. */
 static bool        _ap_pending_world_start         = false;
 static bool        _ap_goal_sent                   = false;
 static bool        _ap_session_started             = false; ///< True once we've done first-tick setup in GM_NORMAL
@@ -940,12 +1052,20 @@ static std::vector<APItem> _ap_pending_items;
 /* Items waiting to be replayed one-per-tick to avoid flooding commands_per_frame */
 static std::deque<APItem> _ap_replay_queue;
 
+/* Deferred DoCommands for engine unlocks — drained 3 per 250 ms tick so that a
+ * single AP item unlocking a full aircraft tier (14+ engines) never trips the
+ * server's commands_per_frame rate-limit.  Local _ap_unlocked_engine_ids is
+ * updated immediately; only the per-company DoCommand is deferred.
+ * Note: _ap_deferred_cmds is declared near the top of the file. */
+
 static void AP_ResetProgressStateForNewSlot()
 {
 	_ap_completed_mission_locations.clear();
 	_ap_purchased_shop_locations.clear();
 	_ap_goal_sent = false;
 	_ap_pending_items.clear();
+	_ap_replay_queue.clear();
+	_ap_deferred_cmds.clear();
 	_ap_received_item_counts.clear();
 	_ap_unlocked_tier_counts.clear();
 	_ap_starting_grants_applied_slot.clear();
@@ -1111,6 +1231,8 @@ static void AP_OnSlotData(const APSlotData &sd)
 	_ap_engine_map_built = false; /* rebuild map for new session */
 	_ap_cargo_map_built  = false; /* rebuild cargo map for new session */
 	_ap_unlocked_cargo_types.fill(false);
+	for (int i = 0; i < 4; i++) _ap_utility_unlocked[i] = false;
+	AP_ResetCompanyUtilityUnlocks(_local_company);
 	AP_ApplyCompletedMissionRestore();
 	AP_ApplyPurchasedShopRestore();
 	_ap_status_dirty.store(true);
@@ -1177,6 +1299,19 @@ static void AP_OnItemReceived(const APItem &item)
 		return;
 	}
 
+	/* -- Utility (infrastructure lock) items --------------------- */
+	for (int i = 0; i < 4; i++) {
+		if (item.item_name == AP_UTILITY_NAMES[i]) {
+			_ap_utility_unlocked[i] = true;
+			/* Synchronize unlock across all machines (host + all clients) via DoCommand. */
+			Command<CMD_AP_SET_UTILITY_UNLOCK>::Post(_local_company, (uint8_t)i, true);
+			if (!is_replay) AP_ShowNews("Infrastructure unlocked: " + item.item_name);
+			SetWindowClassesDirty(WC_ARCHIPELAGO);
+			_ap_status_dirty.store(true);
+			return;
+		}
+	}
+
 	/* -- Cargo type items ----------------------------------------- */
 	static const std::set<std::string> CARGO_ITEM_NAMES = {
 		"Passengers", "Mail", "Coal", "Oil", "Livestock", "Goods",
@@ -1235,6 +1370,19 @@ static void AP_OnConnected()
 	/* Force English immediately on connect so any subsequent string lookups
 	 * (including engine name map building) use English names. */
 	ForceEnglishLanguage();
+
+	/* Raise network command-rate limits for AP bulk operations.
+	 * AP can legitimately send 14+ engine-unlock DoCommands per item tier
+	 * plus cargo and utility commands.  The defaults (2 per frame client,
+	 * queue limit 16) are far too small for this workload.
+	 *
+	 * All three settings are SettingFlag::NotInSave|NotInConfig|NoNetworkSync
+	 * so the change is session-only, per-machine, and requires no broadcast.
+	 * We also keep the deferred engine-command queue as a secondary safeguard. */
+	_settings_client.network.commands_per_frame        = 512;
+	_settings_client.network.commands_per_frame_server = 512;
+	_settings_client.network.max_commands_in_queue     = 4096;
+
 	_ap_status_dirty.store(true);
 }
 
@@ -1246,6 +1394,8 @@ static void AP_OnDisconnected(const std::string &reason)
 	_ap_pending_world_start = false;
 	_ap_session_started = false;
 	_ap_unlocked_cargo_types.fill(false);
+	for (int i = 0; i < 4; i++) _ap_utility_unlocked[i] = false;
+	AP_ResetCompanyUtilityUnlocks(_local_company);
 	_ap_unlocked_company_colours.clear();
 	if (_game_mode == GM_MENU) _ap_completed_mission_locations.clear();
 	AP_LOG("Session flags reset — next connect can start world");
@@ -1519,6 +1669,20 @@ void AP_SetCumulStats(const uint64_t *cargo_in, int num_cargo, int64_t profit_in
         _ap_cumul_cargo[i] = cargo_in[i];
     _ap_cumul_profit = (Money)profit_in;
     _ap_stats_initialized = true;
+}
+
+void AP_GetCumulStatsByVtype(uint64_t *flat_out, int vtype_count, int num_cargo)
+{
+    for (int v = 0; v < vtype_count && v < AP_VTYPE_COUNT; v++)
+        for (int i = 0; i < num_cargo && i < (int)NUM_CARGO; i++)
+            flat_out[v * num_cargo + i] = _ap_cumul_cargo_by_vtype[v][i];
+}
+
+void AP_SetCumulStatsByVtype(const uint64_t *flat_in, int vtype_count, int num_cargo)
+{
+    for (int v = 0; v < vtype_count && v < AP_VTYPE_COUNT; v++)
+        for (int i = 0; i < num_cargo && i < (int)NUM_CARGO; i++)
+            _ap_cumul_cargo_by_vtype[v][i] = flat_in[v * num_cargo + i];
 }
 
 /* Returns "location=N:P,..." for all maintain missions.
@@ -1925,6 +2089,7 @@ void AP_OnLeaveGame()
 	_ap_pending_world_start = false;
 	_ap_pending_items.clear();
 	_ap_replay_queue.clear();
+	_ap_deferred_cmds.clear();
 	_ap_open_network_window_pending = false;
 	_ap_status_dirty.store(true);
 }
@@ -1967,13 +2132,20 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 			_ap_received_item_counts.clear();  /* reset for fresh item tracking this session */
 			_ap_unlocked_tier_counts.clear();  /* reset tier progress — items will replay and re-unlock */
 			_ap_unlocked_cargo_types.fill(false);
+			for (int i = 0; i < 4; i++) _ap_utility_unlocked[i] = false;
+			AP_ResetCompanyUtilityUnlocks(_local_company);
 			_ap_unlocked_company_colours.clear();
 
 			CompanyID cid = _local_company;
 			Company *c = Company::GetIfValid(cid);
 
-			/* Reset per-company cargo unlock state for this company */
-			AP_ResetCompanyCargoUnlocks(cid);
+			/* Do NOT reset per-company cargo unlock state here.
+			 * AP_ResetCompanyCargoUnlocks is a local-only write — it resets the
+			 * state on the AP client but NOT on co-op partners (who have never
+			 * reset their state), causing simulation divergence.  On a fresh
+			 * savegame load the array is already zero-initialised.  On a plain
+			 * reconnect the old (correct) state persists and replay items will
+			 * confirm it idempotently via CmdAPSetCargoUnlock. */
 
 			/* Reset and activate per-company AP state (engine unlocks, airport tier).
 			 * CMD_AP_SET_COMPANY_AP_ACTIVE syncs to all machines so coop partners
@@ -2123,10 +2295,38 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 		 * and win condition remain every ~10 s. */
 		_ap_realtime_ticks++;
 
-		/* Drain one pending replay item per tick to avoid command floods in MP */
-		if (_ap_session_started && !_ap_replay_queue.empty() && _game_mode == GM_NORMAL) {
-			AP_OnItemReceived(_ap_replay_queue.front());
-			_ap_replay_queue.pop_front();
+		/* Drain pending replay / new items and deferred engine-unlock commands.
+		 *
+		 * Replay items (is_replay=true) are consumed all at once — they restore
+		 * previously-unlocked state and must complete before the first simulation
+		 * tick so that all machines agree on cargo/utility unlock state.  No news
+		 * or visual fanfare is shown for replay items, so there is no UX reason
+		 * to delay them.
+		 *
+		 * New (non-replay) items are still drip-fed one per 250 ms tick so the
+		 * player sees each unlock message individually.
+		 *
+		 * Deferred engine-unlock DoCommands drain at 3 per tick.  This keeps us
+		 * well under the server's commands_per_frame limit even when a single
+		 * "Progressive Aircrafts" item queues 14+ engine commands at once. */
+		if (_ap_session_started && _game_mode == GM_NORMAL) {
+			if (!_ap_replay_queue.empty()) {
+				/* Consume all replay items in one shot */
+				while (!_ap_replay_queue.empty() && _ap_replay_queue.front().is_replay) {
+					AP_OnItemReceived(_ap_replay_queue.front());
+					_ap_replay_queue.pop_front();
+				}
+				/* Then process one new (non-replay) item per tick */
+				if (!_ap_replay_queue.empty()) {
+					AP_OnItemReceived(_ap_replay_queue.front());
+					_ap_replay_queue.pop_front();
+				}
+			}
+			/* Drain up to 3 deferred engine-unlock commands per tick */
+			for (int i = 0; i < 3 && !_ap_deferred_cmds.empty(); i++) {
+				_ap_deferred_cmds.front()();
+				_ap_deferred_cmds.pop_front();
+			}
 		}
 
 		if (_ap_realtime_ticks % AP_MISSION_CHECK_TICKS == 0 &&

@@ -40,6 +40,7 @@
 #include "water_cmd.h"
 #include "landscape_cmd.h"
 #include "pathfinder/water_regions.h"
+#include "archipelago.h"
 
 #include "table/strings.h"
 
@@ -492,6 +493,11 @@ void MakeRiverAndModifyDesertZoneAround(TileIndex tile)
 CommandCost CmdBuildCanal(DoCommandFlags flags, TileIndex tile, TileIndex start_tile, WaterClass wc, bool diagonal)
 {
 	if (start_tile >= Map::Size() || !IsValidWaterClass(wc)) return CMD_ERROR;
+
+	/* AP infrastructure lock */
+	if (AP_IsActive() && _current_company == _local_company && !AP_IsCanalsUnlocked()) {
+		return CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE);
+	}
 
 	/* Outside of the editor you can only build canals, not oceans */
 	if (wc != WaterClass::Canal && _game_mode != GM_EDITOR) return CMD_ERROR;

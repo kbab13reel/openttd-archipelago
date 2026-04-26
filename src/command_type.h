@@ -380,6 +380,7 @@ enum Commands : uint8_t {
 	CMD_AP_SET_COMPANY_AP_ACTIVE,          ///< mark a company as having AP restrictions active
 	CMD_AP_SET_ENGINE_UNLOCK,              ///< synchronize AP engine unlock state per company
 	CMD_AP_SET_AIRPORT_TIER,               ///< synchronize AP airport tier per company
+	CMD_AP_SET_UTILITY_UNLOCK,             ///< synchronize AP infrastructure (bridge/tunnel/canal/terraform) unlock per company
 
 	CMD_END,                          ///< Must ALWAYS be on the end of this list!! (period)
 };

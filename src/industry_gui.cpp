@@ -42,6 +42,7 @@
 #include "clear_map.h"
 #include "zoom_func.h"
 #include "industry_cmd.h"
+#include "archipelago.h"  /* AP_IsActive — free funding display */
 #include "graph_gui.h"
 #include "querystring_gui.h"
 #include "stringfilter_type.h"
@@ -555,7 +556,11 @@ public:
 				const IndustrySpec *indsp = GetIndustrySpec(this->selected_type);
 
 				if (_game_mode != GM_EDITOR) {
-					DrawString(ir, GetString(STR_FUND_INDUSTRY_INDUSTRY_BUILD_COST, indsp->GetConstructionCost()));
+					if (AP_IsActive() && Industry::GetIndustryTypeCount(this->selected_type) < 10) {
+						DrawString(ir, "Cost: FREE (AP - less than 10 exist)", TC_GREEN);
+					} else {
+						DrawString(ir, GetString(STR_FUND_INDUSTRY_INDUSTRY_BUILD_COST, indsp->GetConstructionCost()));
+					}
 					ir.top += GetCharacterHeight(FS_NORMAL);
 				}
 

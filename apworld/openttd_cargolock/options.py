@@ -92,6 +92,138 @@ class RevealShopItems(Toggle):
     default = 1
 
 # ═══════════════════════════════════════════════════════════════
+#  INFRASTRUCTURE LOCKS
+# ═══════════════════════════════════════════════════════════════
+
+class LockBridges(Toggle):
+    """Lock bridge construction behind the 'Bridges' AP item.
+    When on, players cannot build any bridge until 'Bridges' is received."""
+    display_name = "Lock Bridges"
+    default = 1
+
+class LockTunnels(Toggle):
+    """Lock tunnel construction behind the 'Tunnels' AP item.
+    When on, players cannot build any tunnel until 'Tunnels' is received."""
+    display_name = "Lock Tunnels"
+    default = 1
+
+class LockCanals(Toggle):
+    """Lock canal/aqueduct construction behind the 'Canals' AP item.
+    When on, players cannot build canals or water bridges until 'Canals' is received."""
+    display_name = "Lock Canals"
+    default = 1
+
+class LockTerraforming(Toggle):
+    """Lock terraforming (raise/lower land) behind the 'Terraforming' AP item.
+    When on, players cannot terraform land until 'Terraforming' is received."""
+    display_name = "Lock Terraforming"
+    default = 1
+
+class UtilitiesRequiredTier(Range):
+    """Tiered cargo missions at or above this tier require at least one locked utility
+    (Bridges, Tunnels, Canals, Terraforming) to be unlocked in logic.
+    Only has effect when at least one infrastructure lock option is enabled.
+    Default: 2 (i.e. tier-2 missions and above need a utility item)."""
+    display_name = "Utilities Required Tier"
+    range_start = 1
+    range_end = 10
+    default = 2
+    """How many 'Transport <Cargo> by <Vehicle>' missions to generate.
+    0  = none.  37 = all valid cargo/vehicle combinations.
+    Any value in between randomly selects that many from the 37 possibilities.
+    Each mission requires the cargo item AND the matching vehicle type to be in logic."""
+    display_name = "Cargo-Vehicle Mission Count"
+    range_start = 0
+    range_end = 37
+    default = 10
+
+class GlobalTieredMissionCount(Range):
+    """Number of progressive transport tiers generated for each cargo type.
+    Tier 1 requires 1 000 units, tier 2 requires 10 000, tier 3 requires 100 000, etc.
+    Per-cargo options override this global setting."""
+    display_name = "Global Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 3
+
+class PassengersTieredMissionCount(Range):
+    """Tiered mission count for Passengers. Overrides global if > 0."""
+    display_name = "Passengers Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0  # 0 = use global
+
+class MailTieredMissionCount(Range):
+    """Tiered mission count for Mail. Overrides global if > 0."""
+    display_name = "Mail Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class CoalTieredMissionCount(Range):
+    """Tiered mission count for Coal. Overrides global if > 0."""
+    display_name = "Coal Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class OilTieredMissionCount(Range):
+    """Tiered mission count for Oil. Overrides global if > 0."""
+    display_name = "Oil Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class LivestockTieredMissionCount(Range):
+    """Tiered mission count for Livestock. Overrides global if > 0."""
+    display_name = "Livestock Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class GoodsTieredMissionCount(Range):
+    """Tiered mission count for Goods. Overrides global if > 0."""
+    display_name = "Goods Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class GrainTieredMissionCount(Range):
+    """Tiered mission count for Grain. Overrides global if > 0."""
+    display_name = "Grain Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class WoodTieredMissionCount(Range):
+    """Tiered mission count for Wood. Overrides global if > 0."""
+    display_name = "Wood Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class IronOreTieredMissionCount(Range):
+    """Tiered mission count for Iron Ore. Overrides global if > 0."""
+    display_name = "Iron Ore Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class SteelTieredMissionCount(Range):
+    """Tiered mission count for Steel. Overrides global if > 0."""
+    display_name = "Steel Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+class ValuablesTieredMissionCount(Range):
+    """Tiered mission count for Valuables. Overrides global if > 0."""
+    display_name = "Valuables Tiered Mission Count"
+    range_start = 0
+    range_end = 10
+    default = 0
+
+# ═══════════════════════════════════════════════════════════════
 #  WORLD GENERATION
 # ═══════════════════════════════════════════════════════════════
 
@@ -259,6 +391,26 @@ class OpenTTDOptions(PerGameCommonOptions):
     shop_cost_min:                   ShopCostMin
     shop_cost_max:                   ShopCostMax
     reveal_shop_items:               RevealShopItems
+    # Infrastructure locks
+    lock_bridges:                    LockBridges
+    lock_tunnels:                    LockTunnels
+    lock_canals:                     LockCanals
+    lock_terraforming:               LockTerraforming
+    utilities_required_tier:         UtilitiesRequiredTier
+    cargo_vehicle_mission_count:     CargoVehicleMissionCount
+    # Tiered cargo missions
+    global_tiered_mission_count:     GlobalTieredMissionCount
+    passengers_tiered_mission_count: PassengersTieredMissionCount
+    mail_tiered_mission_count:       MailTieredMissionCount
+    coal_tiered_mission_count:       CoalTieredMissionCount
+    oil_tiered_mission_count:        OilTieredMissionCount
+    livestock_tiered_mission_count:  LivestockTieredMissionCount
+    goods_tiered_mission_count:      GoodsTieredMissionCount
+    grain_tiered_mission_count:      GrainTieredMissionCount
+    wood_tiered_mission_count:       WoodTieredMissionCount
+    iron_ore_tiered_mission_count:   IronOreTieredMissionCount
+    steel_tiered_mission_count:      SteelTieredMissionCount
+    valuables_tiered_mission_count:  ValuablesTieredMissionCount
     # World Generation
     start_year:                      StartYear
     map_size_x:                      MapSizeX
@@ -288,6 +440,28 @@ openttd_option_groups = [
         ShopCostMin,
         ShopCostMax,
         RevealShopItems,
+        CargoVehicleMissionCount,
+    ]),
+    OptionGroup("Infrastructure Locks", [
+        LockBridges,
+        LockTunnels,
+        LockCanals,
+        LockTerraforming,
+        UtilitiesRequiredTier,
+    ]),
+    OptionGroup("Tiered Cargo Missions", [
+        GlobalTieredMissionCount,
+        PassengersTieredMissionCount,
+        MailTieredMissionCount,
+        CoalTieredMissionCount,
+        OilTieredMissionCount,
+        LivestockTieredMissionCount,
+        GoodsTieredMissionCount,
+        GrainTieredMissionCount,
+        WoodTieredMissionCount,
+        IronOreTieredMissionCount,
+        SteelTieredMissionCount,
+        ValuablesTieredMissionCount,
     ]),
     OptionGroup("World Generation", [
         StartYear,

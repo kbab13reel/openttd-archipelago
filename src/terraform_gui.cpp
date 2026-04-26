@@ -38,6 +38,7 @@
 #include "landscape_cmd.h"
 #include "terraform_cmd.h"
 #include "object_cmd.h"
+#include "archipelago.h"
 
 #include "widgets/terraform_widget.h"
 
@@ -169,6 +170,16 @@ struct TerraformToolbarWindow : Window {
 		/* Don't show the place object button when there are no objects to place. */
 		NWidgetStacked *show_object = this->GetWidget<NWidgetStacked>(WID_TT_SHOW_PLACE_OBJECT);
 		show_object->SetDisplayedPlane(ObjectClass::GetUIClassCount() != 0 ? 0 : SZSP_NONE);
+	}
+
+	void OnInvalidateData([[maybe_unused]] int data = 0, [[maybe_unused]] bool gui_scope = true) override
+	{
+		if (!gui_scope) return;
+		/* Grey out raise/lower/level land when AP terraforming is locked. */
+		bool can_terraform = AP_IsTerraformingUnlocked();
+		this->SetWidgetDisabledState(WID_TT_LOWER_LAND, !can_terraform);
+		this->SetWidgetDisabledState(WID_TT_RAISE_LAND, !can_terraform);
+		this->SetWidgetDisabledState(WID_TT_LEVEL_LAND, !can_terraform);
 	}
 
 	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int click_count) override

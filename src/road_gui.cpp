@@ -397,6 +397,9 @@ struct BuildRoadToolbarWindow : Window {
 		this->SetWidgetDisabledState(WID_ROT_DEPOT, !can_build_depot);
 		this->SetWidgetDisabledState(WID_ROT_BUS_STATION, !can_build_station);
 		this->SetWidgetDisabledState(WID_ROT_TRUCK_STATION, !can_build_station);
+		/* AP infrastructure locks */
+		this->SetWidgetDisabledState(WID_ROT_BUILD_BRIDGE, !AP_IsBridgesUnlocked());
+		this->SetWidgetDisabledState(WID_ROT_BUILD_TUNNEL, !AP_IsTunnelsUnlocked());
 		if (!can_build) {
 			CloseWindowById(WC_BUS_STATION, TRANSPORT_ROAD);
 			CloseWindowById(WC_TRUCK_STATION, TRANSPORT_ROAD);

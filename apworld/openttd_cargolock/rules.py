@@ -1,8 +1,8 @@
 
 from __future__ import annotations
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 from BaseClasses import CollectionState
-from .locations import get_shop_definitions, get_shop_slot_count, get_shop_tier_count
+from .locations import get_shop_definitions, get_shop_slot_count, get_shop_tier_count, get_tiered_missions, get_cargo_vehicle_missions
 if TYPE_CHECKING:
     from .world import OpenTTDWorld
 
@@ -89,6 +89,36 @@ def unlocked_vehicle_type_count(state: CollectionState, player: int) -> int:
         int(has_vehicle_type(state, player, "aircraft"))
 
 
+def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, tier: int) -> bool:
+    """Return True if the player has at least `tier` progressive vehicles that can carry this cargo.
+
+    Tier mapping for tiered missions:
+      transport tier 1 (1 000)   → vehicle tier 1 (covered by has_cargo)
+      transport tier 2 (10 000)  → vehicle tier 2
+      transport tier 3 (100 000) → vehicle tier 3
+      transport tier 4+ (1 M+)   → vehicle tier 4
+    """
+    vehicle_items = {
+        "train": "Progressive Trains",
+        "road_vehicle": "Progressive Road Vehicles",
+        "ship": "Progressive Ships",
+        "aircraft": "Progressive Aircrafts",
+    }
+    return any(
+        state.count(vehicle_items[vtype], player) >= tier
+        for vtype, cargos in VEHICULE_CARGO_COMPATIBILITY.items()
+        if cargo in cargos
+    )
+
+
+def has_any_utility(state: CollectionState, player: int, locked_utilities: List[str]) -> bool:
+    """Return True if at least one of the given locked utility items is in the state.
+    Always returns True when the list is empty (no utilities locked)."""
+    if not locked_utilities:
+        return True
+    return state.has_any(locked_utilities, player)
+
+
 def visible_shop_location_count(state: CollectionState, player: int, shop_slots: int, shop_tiers: int) -> int:
     if shop_slots <= 0 or shop_tiers <= 0:
         return 0
@@ -150,5 +180,79 @@ def set_all_rules(world: "OpenTTDWorld") -> None:
             shop_index = next((index for index, shop in enumerate(shop_definitions, start=1) if shop["location"] == name), 0)
             if shop_index > 0:
                 location.access_rule = lambda state, shop_index=shop_index: visible_shop_location_count(state, player, shop_slots, shop_tiers) >= shop_index
+
+    # ── TIERED CARGO MISSION RULES ─────────────────────────────────────────
+    # Overrides the generic "has_cargo" rule set above for Transport X N names.
+    # Each tier N requires:
+    #   - has_cargo (unlock + dependency + any compatible vehicle at tier 1)
+    #   - previous tier's event item (ensures in-order completion)
+    #   - at least `min(N, 4)` copies of a compatible vehicle progressive item
+    #   - at tier >= utilities_required_tier: at least one locked utility unlocked
+    #
+    # The matching event location gets the same rule so the event only fires
+    # once the tier is actually reachable.
+
+    # Determine which utility items are locked for this slot.
+    utility_option_keys = [
+        ("Bridges",      "lock_bridges"),
+        ("Tunnels",      "lock_tunnels"),
+        ("Canals",       "lock_canals"),
+        ("Terraforming", "lock_terraforming"),
+    ]
+    locked_utilities: List[str] = [
+        item for item, opt_key in utility_option_keys
+        if getattr(world.options, opt_key).value
+    ]
+    utilities_required_tier = int(world.options.utilities_required_tier.value)
+
+    for mission in get_tiered_missions(world):
+        cargo = mission["cargo"]
+        tier = mission["tier"]
+        loc_name = mission["location"]
+        event_loc_name = f"Transport {cargo} {tier} Complete"
+
+        # Vehicle tier required: tier 1 is already handled by has_cargo; cap at 4.
+        vtier = min(tier, 4)
+
+        if tier == 1:
+            if locked_utilities and tier >= utilities_required_tier:
+                rule = lambda state, c=cargo, lu=locked_utilities: (
+                    has_cargo(state, player, c)
+                    and has_any_utility(state, player, lu)
+                )
+            else:
+                rule = lambda state, c=cargo: has_cargo(state, player, c)
+        else:
+            prev_event_item = f"Transport {cargo} {tier - 1} Done"
+            if locked_utilities and tier >= utilities_required_tier:
+                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item, lu=locked_utilities: (
+                    has_cargo(state, player, c)
+                    and state.has(prev, player)
+                    and has_vehicle_tier_for_cargo(state, player, c, vt)
+                    and has_any_utility(state, player, lu)
+                )
+            else:
+                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item: (
+                    has_cargo(state, player, c)
+                    and state.has(prev, player)
+                    and has_vehicle_tier_for_cargo(state, player, c, vt)
+                )
+
+        multiworld.get_location(loc_name, player).access_rule = rule
+        multiworld.get_location(event_loc_name, player).access_rule = rule
+
+    # ── CARGO-BY-VEHICLE MISSION RULES ───────────────────────────────────────────
+    # Each "Transport <Cargo> by <Vehicle>" location requires:
+    #   - has_cargo(cargo)  — cargo unlocked + industry chain deps + any vehicle tier 1
+    #   - has_vehicle_type(vehicle_key)  — that specific vehicle type unlocked
+    for mission in get_cargo_vehicle_missions(world):
+        cargo   = mission["cargo"]
+        vkey    = mission["vehicle_key"]
+        loc_name = mission["location"]
+        rule = lambda state, c=cargo, v=vkey: (
+            has_cargo(state, player, c)
+            and has_vehicle_type(state, player, v)
+        )
+        multiworld.get_location(loc_name, player).access_rule = rule
 
     world.multiworld.completion_condition[player] = lambda state: state.has_all(("Passengers", "Mail", "Coal", "Oil", "Livestock", "Goods", "Grain", "Wood", "Iron Ore", "Steel", "Valuables"), world.player)

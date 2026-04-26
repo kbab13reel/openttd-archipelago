@@ -47,13 +47,24 @@ class OpenTTDWorld(World):
     def interpret_slot_data(cls, slot_data: dict[str, Any]) -> dict[str, Any]:
         """Reconstruct relevant options from slot_data for yaml-less trackers (e.g. Universal Tracker).
         Only options that affect the location pool or access rules are needed."""
-        return {
+        result = {
             "enable_shop": slot_data.get("enable_shop", 1),
             "shop_slots":  len(slot_data.get("shop_locations", [])),
             "shop_tiers": slot_data.get("shop_tiers", 5),
             "shop_cost_min": slot_data.get("shop_cost_min", 50000),
             "shop_cost_max": slot_data.get("shop_cost_max", 1000000),
+            "global_tiered_mission_count": slot_data.get("global_tiered_mission_count", 3),
+            "cargo_vehicle_mission_count": slot_data.get("cargo_vehicle_mission_count", 10),
+            "lock_bridges":           slot_data.get("lock_bridges", 1),
+            "lock_tunnels":           slot_data.get("lock_tunnels", 1),
+            "lock_canals":            slot_data.get("lock_canals", 1),
+            "lock_terraforming":      slot_data.get("lock_terraforming", 1),
+            "utilities_required_tier": slot_data.get("utilities_required_tier", 2),
         }
+        for cargo in locations.CARGO_TYPES:
+            key = locations._cargo_option_key(cargo)
+            result[key] = slot_data.get(key, 0)
+        return result
 
     def fill_slot_data(self) -> dict[str, Any]:
         # Provide an explicit id->name map so clients can always resolve
@@ -74,14 +85,16 @@ class OpenTTDWorld(World):
                     continue
                 location = self.multiworld.get_location(location_name, self.player)
                 if location.item is not None:
-                    shop["name"] = location.item.name
+                    item_name = location.item.name
+                    recipient = self.multiworld.player_name[location.item.player]
+                    shop["name"] = f"{item_name} ({recipient})"
         shop_tiers = locations.get_shop_tier_count(self)
 
         return {
             "item_id_to_name": item_id_to_name,
             "location_name_to_id": location_name_to_id,
             "mission_count": len(locations.MISSION_DEFINITIONS),
-            "missions": locations.get_slot_missions(),
+            "missions": locations.get_slot_missions(self),
             "starting_vehicle_type": self.options.starting_vehicle_type.value,
             "starting_cargo_type": self.options.starting_cargo_type.value,
             "starting_cash_bonus": self.options.starting_cash_bonus.value,
@@ -91,6 +104,14 @@ class OpenTTDWorld(World):
             "shop_locations": shop_locations,
             "shop_cost_min": self.options.shop_cost_min.value,
             "shop_cost_max": self.options.shop_cost_max.value,
+
+            # Tiered cargo mission counts
+            "global_tiered_mission_count": self.options.global_tiered_mission_count.value,
+            "cargo_vehicle_mission_count": self.options.cargo_vehicle_mission_count.value,
+            **{
+                locations._cargo_option_key(cargo): locations._get_tiered_mission_count(self, cargo)
+                for cargo in locations.CARGO_TYPES
+            },
 
             # World generation settings (match OpenTTD map generation menu)
             "start_year": self.options.start_year.value,
@@ -107,4 +128,11 @@ class OpenTTDWorld(World):
             "number_towns": self.options.number_of_towns.value,
             "quantity_sea_lakes": self.options.sea_level.value,
             "industry_density": self.options.industry_density.value,
+
+            # Infrastructure locks
+            "lock_bridges":           self.options.lock_bridges.value,
+            "lock_tunnels":           self.options.lock_tunnels.value,
+            "lock_canals":            self.options.lock_canals.value,
+            "lock_terraforming":      self.options.lock_terraforming.value,
+            "utilities_required_tier": self.options.utilities_required_tier.value,
         }

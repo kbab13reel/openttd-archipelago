@@ -45,7 +45,7 @@ PROGRESSIVE_ROAD_VEHICLES: List[List[str]] = [[
     "Talbott Livestock Van",
 ],[
     "Hereford Leopard Bus",
-    "Perry Mail Truck",
+    "Reynard Mail Truck",
     "Uhl Coal Truck",
     "Thomas Grain Truck",
     "Craighead Goods Truck",
@@ -57,7 +57,7 @@ PROGRESSIVE_ROAD_VEHICLES: List[List[str]] = [[
     "Uhl Livestock Van",
 ],[
     "Foster Bus",
-    "Reynard Mail Truck",
+    "Perry Mail Truck",
     "DW Coal Truck",
     "Goss Grain Truck",
     "Goss Goods Truck",
@@ -209,6 +209,12 @@ ITEM_NAME_TO_ID = {
 for i, colour_item in enumerate(COMPANY_COLOUR_ITEMS, start=19):
     ITEM_NAME_TO_ID[colour_item] = i
 
+# ── Infrastructure / utility items ────────────────────────────────────────
+UTILITY_ITEMS = ["Bridges", "Tunnels", "Canals", "Terraforming"]
+
+for i, utility_item in enumerate(UTILITY_ITEMS, start=35):
+    ITEM_NAME_TO_ID[utility_item] = i
+
 DEFAULT_ITEM_CLASSIFICATION = {
     "Progressive Trains": ItemClassification.progression,
     "Progressive Road Vehicles": ItemClassification.progression,
@@ -232,6 +238,9 @@ DEFAULT_ITEM_CLASSIFICATION = {
 
 for colour_item in COMPANY_COLOUR_ITEMS:
     DEFAULT_ITEM_CLASSIFICATION[colour_item] = ItemClassification.filler
+
+for utility_item in UTILITY_ITEMS:
+    DEFAULT_ITEM_CLASSIFICATION[utility_item] = ItemClassification.progression
 
 class OpenTTDItem(Item):
     game = "OpenTTD Cargolock"
@@ -336,6 +345,18 @@ def create_all_items(world: OpenTTDWorld) -> None:
         itempool.append(create_item_with_correct_classification(world, name))
     for name in available_company_colours:
         itempool.append(create_item_with_correct_classification(world, name))
+
+    # Add locked utility items (Bridges, Tunnels, Canals, Terraforming)
+    utility_option_keys = {
+        "Bridges":      "lock_bridges",
+        "Tunnels":      "lock_tunnels",
+        "Canals":       "lock_canals",
+        "Terraforming": "lock_terraforming",
+    }
+    for item_name, opt_key in utility_option_keys.items():
+        opt = getattr(world.options, opt_key, None)
+        if opt is not None and opt.value:
+            itempool.append(create_item_with_correct_classification(world, item_name))
     
     number_of_unfilled_locations = len(world.multiworld.get_unfilled_locations(world.player))
     needed_number_of_filler_items = number_of_unfilled_locations - len(itempool)

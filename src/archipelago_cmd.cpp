@@ -44,6 +44,12 @@ static std::array<std::set<uint16_t>, MAX_COMPANIES> _ap_company_engine_unlocked
  */
 static std::array<uint8_t, MAX_COMPANIES> _ap_company_airport_tier{};
 
+/**
+ * Per-company utility unlock bitmask (bit 0=Bridges, 1=Tunnels, 2=Canals, 3=Terraforming).
+ * Synchronized across all machines via CmdAPSetUtilityUnlock.
+ */
+static std::array<uint8_t, MAX_COMPANIES> _ap_company_utility_unlocked{};
+
 struct APAirportTierEntry {
 	uint8_t airport_type;
 };
@@ -119,6 +125,7 @@ void AP_ResetCompanyAPState(CompanyID company)
 	_ap_company_ap_active[company.base()] = false;
 	_ap_company_engine_unlocked[company.base()].clear();
 	_ap_company_airport_tier[company.base()] = 0;
+	_ap_company_utility_unlocked[company.base()] = 0;
 }
 
 CommandCost CmdAPSetCompanyAPActive(DoCommandFlags flags, CompanyID company, bool active)
@@ -240,4 +247,73 @@ bool AP_IsCompanyAirportTypeUnlocked(CompanyID company, uint8_t airport_type)
 		}
 	}
 	return false;
+}
+
+/* ---- Per-company utility (infrastructure lock) unlock ---- */
+
+bool AP_IsCompanyUtilityUnlocked(CompanyID company, uint8_t utility_index)
+{
+	if (company >= MAX_COMPANIES) return true;
+	if (!_ap_company_ap_active[company.base()]) return true;
+	return (_ap_company_utility_unlocked[company.base()] & (1u << utility_index)) != 0;
+}
+
+void AP_ResetCompanyUtilityUnlocks(CompanyID company)
+{
+	if (company >= MAX_COMPANIES) return;
+	_ap_company_utility_unlocked[company.base()] = 0;
+}
+
+/* ---- Savegame-restore helpers (raw index, no CompanyID) ---- */
+
+bool AP_GetCompanyAPActiveIdx(uint8_t idx)
+{
+	if (idx >= MAX_COMPANIES) return false;
+	return _ap_company_ap_active[idx];
+}
+
+uint64_t AP_GetCompanyCargoMaskIdx(uint8_t idx)
+{
+	if (idx >= MAX_COMPANIES) return 0;
+	uint64_t mask = 0;
+	for (int i = 0; i < (int)NUM_CARGO && i < 64; i++) {
+		if (_ap_company_cargo_unlocked[idx][i]) mask |= (1ULL << i);
+	}
+	return mask;
+}
+
+void AP_SetCompanyAPActiveIdx(uint8_t idx, bool active)
+{
+	if (idx >= MAX_COMPANIES) return;
+	_ap_company_ap_active[idx] = active;
+}
+
+void AP_SetCompanyCargoMaskIdx(uint8_t idx, uint64_t mask)
+{
+	if (idx >= MAX_COMPANIES) return;
+	for (int i = 0; i < (int)NUM_CARGO && i < 64; i++) {
+		_ap_company_cargo_unlocked[idx][i] = (mask & (1ULL << i)) != 0;
+	}
+}
+
+CommandCost CmdAPSetUtilityUnlock(DoCommandFlags flags, CompanyID company, uint8_t utility_index, bool unlocked)
+{
+	if (company >= MAX_COMPANIES) return CommandCost();
+	if (utility_index >= 4) return CommandCost();
+	if (!Company::IsValidID(company)) return CommandCost();
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		if (unlocked) {
+			_ap_company_utility_unlocked[company.base()] |= (1u << utility_index);
+		} else {
+			_ap_company_utility_unlocked[company.base()] &= ~(1u << utility_index);
+		}
+		/* Refresh build toolbars so greyed-out buttons update. */
+		InvalidateWindowData(WC_BUILD_TOOLBAR, TRANSPORT_RAIL);
+		InvalidateWindowData(WC_BUILD_TOOLBAR, TRANSPORT_ROAD);
+		InvalidateWindowData(WC_BUILD_TOOLBAR, TRANSPORT_WATER);
+		InvalidateWindowData(WC_SCEN_LAND_GEN, 0);
+	}
+
+	return CommandCost();
 }

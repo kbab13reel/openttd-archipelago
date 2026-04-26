@@ -2283,6 +2283,7 @@ STR_ARCHIPELAGO_NEWS                                            :{RAW_STRING}
 STR_ARCHIPELAGO_INVENTORY_CAPTION                               :Archipelago - Inventory
 STR_ARCHIPELAGO_BTN_INVENTORY                                   :{BLACK}Inventory
 STR_ARCHIPELAGO_SHOP_CAPTION                                    :Archipelago - Shop
+STR_AP_ERROR_LOCKED_INFRASTRUCTURE                              :[AP] Infrastructure locked - find the Archipelago item to unlock it!
 
 STR_INTRO_BASESET                                               :{BLACK}The currently selected base graphics set is missing {NUM} sprite{P "" s}. Please check for updates for the baseset.
 STR_INTRO_TRANSLATION                                           :{BLACK}This translation misses {NUM} string{P "" s}. Please help make OpenTTD better by signing up as translator. See readme.txt for details.

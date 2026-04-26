@@ -1221,6 +1221,11 @@ void CargoPayment::PayFinalDelivery(CargoType cargo, const CargoPacket *cp, uint
 	Money profit = DeliverGoods(count, cargo, this->current_station, cp->GetDistance(current_tile), cp->GetPeriodsInTransit(), Company::Get(this->front->owner), cp->GetSource());
 	this->route_profit += profit;
 
+	/* Record per-vehicle-type delivery for Archipelago mission tracking. */
+	if (AP_IsActive() && this->front->owner == _local_company) {
+		AP_RecordCargoDelivery(this->front->type, cargo, (uint32_t)count);
+	}
+
 	/* The vehicle's profit is whatever route profit there is minus feeder shares. */
 	this->visual_profit += profit - cp->GetFeederShare(count);
 }

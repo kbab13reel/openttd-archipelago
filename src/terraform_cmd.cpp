@@ -19,6 +19,7 @@
 #include "core/backup_type.hpp"
 #include "terraform_cmd.h"
 #include "landscape_cmd.h"
+#include "archipelago.h"
 
 #include "table/strings.h"
 
@@ -168,6 +169,11 @@ static std::tuple<CommandCost, TileIndex> TerraformTileHeight(TerraformerState *
  */
 std::tuple<CommandCost, Money, TileIndex> CmdTerraformLand(DoCommandFlags flags, TileIndex tile, Slope slope, bool dir_up)
 {
+	/* AP infrastructure lock */
+	if (AP_IsActive() && _current_company == _local_company && !AP_IsTerraformingUnlocked()) {
+		return { CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE), 0, INVALID_TILE };
+	}
+
 	CommandCost total_cost(EXPENSES_CONSTRUCTION);
 	int direction = (dir_up ? 1 : -1);
 	TerraformerState ts;
@@ -315,6 +321,11 @@ std::tuple<CommandCost, Money, TileIndex> CmdTerraformLand(DoCommandFlags flags,
 std::tuple<CommandCost, Money, TileIndex> CmdLevelLand(DoCommandFlags flags, TileIndex tile, TileIndex start_tile, bool diagonal, LevelMode lm)
 {
 	if (start_tile >= Map::Size()) return { CMD_ERROR, 0, INVALID_TILE };
+
+	/* AP infrastructure lock */
+	if (AP_IsActive() && _current_company == _local_company && !AP_IsTerraformingUnlocked()) {
+		return { CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE), 0, INVALID_TILE };
+	}
 
 	/* remember level height */
 	uint oldh = TileHeight(start_tile);

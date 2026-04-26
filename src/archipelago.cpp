@@ -530,6 +530,12 @@ static APSlotData ParseSlotData(const json &msg)
 		sd.shop_tiers = d["shop_tiers"].get<int>();
 	}
 
+	/* Infrastructure locks (v0.2.0+) */
+	sd.lock_bridges      = GetBoolLike("lock_bridges",      false);
+	sd.lock_tunnels      = GetBoolLike("lock_tunnels",       false);
+	sd.lock_canals       = GetBoolLike("lock_canals",        false);
+	sd.lock_terraforming = GetBoolLike("lock_terraforming",  false);
+
 	/* Parse missions array */
 	if (d.contains("missions") && d["missions"].is_array()) {
 		for (const auto &m : d["missions"]) {
@@ -538,9 +544,10 @@ static APSlotData ParseSlotData(const json &msg)
 			mission.description = m.value("description", "");
 			mission.type        = m.value("type",        "");
 			mission.difficulty  = m.value("difficulty",  "easy");
-			mission.cargo       = m.value("cargo",       "");
-			mission.unit        = m.value("unit",        "units");
-			mission.amount      = m.value("amount",      (int64_t)0);
+			mission.cargo        = m.value("cargo",        "");
+			mission.unit         = m.value("unit",         "units");
+			mission.vehicle_key  = m.value("vehicle_key",  "");
+			mission.amount       = m.value("amount",       (int64_t)0);
 			mission.completed   = false;
 			mission.current_value = 0;
 			if (!mission.location.empty()) {

@@ -55,6 +55,7 @@
 #include "table/industry_land.h"
 #include "table/build_industry.h"
 
+#include "archipelago.h"  /* AP_IsActive — free funding for scarce industries */
 #include "safeguards.h"
 
 IndustryPool _industry_pool("Industry");
@@ -2143,7 +2144,11 @@ CommandCost CmdBuildIndustry(DoCommandFlags flags, TileIndex tile, IndustryType 
 		AdvertiseIndustryOpening(ind);
 	}
 
-	return CommandCost(EXPENSES_OTHER, indspec->GetConstructionCost());
+	/* Archipelago: if fewer than 10 of this industry type exist, funding is free
+	 * so players are never soft-locked by missing source industries (e.g. no Bank). */
+	Money cost = indspec->GetConstructionCost();
+	if (AP_IsActive() && Industry::GetIndustryTypeCount(it) < 10) cost = 0;
+	return CommandCost(EXPENSES_OTHER, cost);
 }
 
 /**

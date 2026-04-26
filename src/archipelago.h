@@ -24,6 +24,7 @@ enum Colours : uint8_t;
 
 #include "company_type.h"
 #include "engine_type.h"
+#include "vehicle_type.h"
 
 /** Connection states for the Archipelago client. */
 enum class APState : uint8_t {
@@ -61,6 +62,7 @@ struct APMission {
 	std::string difficulty;     ///< "easy","medium","hard","extreme"
 	std::string cargo;          ///< May be empty
 	std::string unit;           ///< "units","£","£/month","vehicles","trains","aircraft","road vehicles","towns","stations","passengers","purchase"
+	std::string vehicle_key;    ///< For "transport_by_vehicle": "train","road_vehicle","ship","aircraft"
 	int64_t     amount = 0;
 	int64_t     current_value = 0; ///< Live progress – updated by CheckMissions() each tick
 	bool        completed = false;
@@ -109,6 +111,12 @@ struct APSlotData {
 
 	/* ── NewGRF options ─────────────────────────────────────────────── */
 	bool                    enable_iron_horse    = false;
+
+	/* ── Infrastructure locks (v0.2.0+) ────────────────────────────── */
+	bool                    lock_bridges         = false;
+	bool                    lock_tunnels         = false;
+	bool                    lock_canals          = false;
+	bool                    lock_terraforming    = false;
 
 	/* ── New apworld (v0.1.0+) ──────────────────────────────────────── */
 	int                     starting_cargo_type  = 0;   ///< 0=any, 1=Passengers, 2=Mail, 3=Coal, 4=Oil, 5=Livestock, 6=Grain, 7=Wood, 8=IronOre, 9=Valuables (matches Python StartingCargoType; Goods/Steel excluded)
@@ -271,11 +279,16 @@ bool AP_IsActive();
 
 /** Returns true when the cargo type index is unlocked by AP items (client-local check). */
 bool AP_IsCargoTypeUnlocked(uint8_t cargo_type);
+bool AP_IsBridgesUnlocked();
+bool AP_IsTunnelsUnlocked();
+bool AP_IsCanalsUnlocked();
+bool AP_IsTerraformingUnlocked();
 
 /** Returns true when the cargo type is unlocked for a specific company (synchronized). */
 bool AP_IsCompanyCargoUnlocked(CompanyID company, uint8_t cargo_type);
 /** Reset per-company cargo unlock state (called at AP session start). */
 void AP_ResetCompanyCargoUnlocks(CompanyID company);
+void AP_RecordCargoDelivery(VehicleType vtype, CargoType ct, uint32_t amount);
 
 /** Per-company AP-active flag — true if this company has AP restrictions (synchronized). */
 bool AP_IsCompanyAPActive(CompanyID company);

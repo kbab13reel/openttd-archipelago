@@ -40,6 +40,7 @@
 #include "tunnelbridge_cmd.h"
 #include "landscape_cmd.h"
 #include "terraform_cmd.h"
+#include "archipelago.h"
 
 #include "table/strings.h"
 #include "table/bridge_land.h"
@@ -310,6 +311,15 @@ static CommandCost CheckBuildAbove(TileIndex tile, DoCommandFlags flags, Axis ax
 CommandCost CmdBuildBridge(DoCommandFlags flags, TileIndex tile_end, TileIndex tile_start, TransportType transport_type, BridgeType bridge_type, uint8_t road_rail_type)
 {
 	CompanyID company = _current_company;
+
+	/* AP infrastructure lock checks */
+	if (AP_IsActive() && company == _local_company) {
+		if (transport_type == TRANSPORT_WATER && !AP_IsCanalsUnlocked()) {
+			return CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE);
+		} else if (transport_type != TRANSPORT_WATER && !AP_IsBridgesUnlocked()) {
+			return CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE);
+		}
+	}
 
 	RailType railtype = INVALID_RAILTYPE;
 	RoadType roadtype = INVALID_ROADTYPE;
@@ -647,6 +657,11 @@ CommandCost CmdBuildBridge(DoCommandFlags flags, TileIndex tile_end, TileIndex t
 CommandCost CmdBuildTunnel(DoCommandFlags flags, TileIndex start_tile, TransportType transport_type, uint8_t road_rail_type)
 {
 	CompanyID company = _current_company;
+
+	/* AP infrastructure lock checks */
+	if (AP_IsActive() && company == _local_company && !AP_IsTunnelsUnlocked()) {
+		return CommandCost(STR_AP_ERROR_LOCKED_INFRASTRUCTURE);
+	}
 
 	RailType railtype = INVALID_RAILTYPE;
 	RoadType roadtype = INVALID_ROADTYPE;

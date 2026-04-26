@@ -133,6 +133,10 @@ struct BuildDocksToolbarWindow : Window {
 		bool can_build_station = can_build && AP_IsShipUnlocked();
 		this->SetWidgetDisabledState(WID_DT_DEPOT, !can_build_depot);
 		this->SetWidgetDisabledState(WID_DT_STATION, !can_build_station);
+		/* AP infrastructure locks */
+		this->SetWidgetDisabledState(WID_DT_CANAL, !AP_IsCanalsUnlocked());
+		this->SetWidgetDisabledState(WID_DT_LOCK, !AP_IsCanalsUnlocked());
+		this->SetWidgetDisabledState(WID_DT_BUILD_AQUEDUCT, !AP_IsCanalsUnlocked());
 		if (!can_build) {
 			CloseWindowById(WC_BUILD_STATION, TRANSPORT_WATER);
 			CloseWindowById(WC_BUILD_DEPOT, TRANSPORT_WATER);

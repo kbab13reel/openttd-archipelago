@@ -482,6 +482,9 @@ struct BuildRailToolbarWindow : Window {
 		bool can_build_station = can_build && AP_IsTrainUnlocked();
 		this->SetWidgetDisabledState(WID_RAT_BUILD_DEPOT, !can_build_depot);
 		this->SetWidgetDisabledState(WID_RAT_BUILD_STATION, !can_build_station);
+		/* AP infrastructure locks */
+		this->SetWidgetDisabledState(WID_RAT_BUILD_BRIDGE, !can_build || !AP_IsBridgesUnlocked());
+		this->SetWidgetDisabledState(WID_RAT_BUILD_TUNNEL, !can_build || !AP_IsTunnelsUnlocked());
 		if (!can_build) {
 			CloseWindowById(WC_BUILD_SIGNAL, TRANSPORT_RAIL);
 			CloseWindowById(WC_BUILD_STATION, TRANSPORT_RAIL);

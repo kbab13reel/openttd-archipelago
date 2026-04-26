@@ -52,6 +52,12 @@ static int64_t ParseI64(const std::string &s, int64_t def = 0)
     std::from_chars(s.data(), s.data() + s.size(), r);
     return r;
 }
+static uint64_t ParseU64(const std::string &s, uint64_t def = 0)
+{
+    uint64_t r = def;
+    std::from_chars(s.data(), s.data() + s.size(), r);
+    return r;
+}
 
 /* ==================================================================== */
 /* OpenTTD headers — safeguards.h bans snprintf/sscanf/to_string etc.  */
@@ -118,10 +124,20 @@ std::string  AP_GetProgressSlotIdentity();
 void         AP_SetProgressSlotIdentity(const std::string &s);
 void         AP_GetCumulStats(uint64_t *cargo_out, int num_cargo, int64_t *profit_out);
 void         AP_SetCumulStats(const uint64_t *cargo_in, int num_cargo, int64_t profit_in);
+void         AP_GetCumulStatsByVtype(uint64_t *flat_out, int vtype_count, int num_cargo);
+void         AP_SetCumulStatsByVtype(const uint64_t *flat_in, int vtype_count, int num_cargo);
 std::string  AP_GetMaintainCountersStr();
 void         AP_SetMaintainCountersStr(const std::string &s);
 std::string  AP_GetNamedEntityStr();
 void         AP_SetNamedEntityStr(const std::string &s);
+
+/* Per-company AP lock state (simulation-critical — must be in savegame). */
+bool     AP_GetCompanyAPActiveIdx(uint8_t company_index);
+uint64_t AP_GetCompanyCargoMaskIdx(uint8_t company_index);
+void     AP_SetCompanyAPActiveIdx(uint8_t company_index, bool active);
+void     AP_SetCompanyCargoMaskIdx(uint8_t company_index, uint64_t mask);
+
+static constexpr uint8_t AP_SL_MAX_COMPANIES = 15; /* matches MAX_COMPANIES */
 
 /* ── Scratch variable — single string holds all AP state ────────────── */
 static std::string _ap_sl_blob;
@@ -155,8 +171,25 @@ struct APSTChunkHandler : ChunkHandler {
         AP_GetCumulStats(cargo, NC, &profit);
         KVSet(_ap_sl_blob, "profit",   IStr(profit));
         KVSet(_ap_sl_blob, "cargo",    PackCargo_AP(cargo, NC));
+
+        constexpr int NV = 4;
+        uint64_t cargov[NV * NC] = {};
+        AP_GetCumulStatsByVtype(cargov, NV, NC);
+        KVSet(_ap_sl_blob, "cargov",   PackCargo_AP(cargov, NV * NC));
+
         KVSet(_ap_sl_blob, "maintain", AP_GetMaintainCountersStr());
         KVSet(_ap_sl_blob, "named",    AP_GetNamedEntityStr());
+
+        /* Save per-company AP lock state so any machine that loads this
+         * savegame (host restart, client reconnect, etc.) immediately has
+         * the correct cargo-restriction state — preventing the first-tick
+         * simulation desync where ap_active=false lets locked cargo load. */
+        for (uint8_t c = 0; c < AP_SL_MAX_COMPANIES; c++) {
+            if (!AP_GetCompanyAPActiveIdx(c)) continue;
+            KVSet(_ap_sl_blob, fmt::format("apf_{}", c), "1");
+            uint64_t cmask = AP_GetCompanyCargoMaskIdx(c);
+            if (cmask != 0) KVSet(_ap_sl_blob, fmt::format("apc_{}", c), fmt::format("{}", cmask));
+        }
 
         SlTableHeader(_ap_desc);
         SlSetArrayIndex(0);
@@ -200,6 +233,9 @@ struct APSTChunkHandler : ChunkHandler {
                 constexpr int NC = 64;
                 uint64_t cargo[NC] = {};
                 AP_SetCumulStats(cargo, NC, 0);
+                constexpr int NV = 4;
+                uint64_t cargov[NV * NC] = {};
+                AP_SetCumulStatsByVtype(cargov, NV, NC);
                 AP_SetMaintainCountersStr("");
                 AP_SetNamedEntityStr("");
                 return;
@@ -223,8 +259,23 @@ struct APSTChunkHandler : ChunkHandler {
             UnpackCargo_AP(KVGet(_ap_sl_blob, "cargo"), cargo, NC);
             AP_SetCumulStats(cargo, NC, getint64("profit"));
 
+            constexpr int NV = 4;
+            uint64_t cargov[NV * NC] = {};
+            UnpackCargo_AP(KVGet(_ap_sl_blob, "cargov"), cargov, NV * NC);
+            AP_SetCumulStatsByVtype(cargov, NV, NC);
+
             AP_SetMaintainCountersStr(KVGet(_ap_sl_blob, "maintain"));
             AP_SetNamedEntityStr(KVGet(_ap_sl_blob, "named"));
+
+            /* Restore per-company AP lock state — must happen during Load()
+             * so the simulation starts with correct cargo restrictions before
+             * the AP timer fires and DoCommands are re-applied. */
+            for (uint8_t c = 0; c < AP_SL_MAX_COMPANIES; c++) {
+                if (KVGet(_ap_sl_blob, fmt::format("apf_{}", c), "0") != "1") continue;
+                AP_SetCompanyAPActiveIdx(c, true);
+                uint64_t cmask = ParseU64(KVGet(_ap_sl_blob, fmt::format("apc_{}", c), "0"), 0);
+                if (cmask != 0) AP_SetCompanyCargoMaskIdx(c, cmask);
+            }
         } catch (...) {
             /* Parsing failed — AP progress lost but game loads. */
         }

@@ -10,7 +10,7 @@ project(${BINARY_NAME}
 )
 
 set(AP_RELEASE_PACKAGE_NAME "openttd-cargolock-archipelago" CACHE STRING "Base filename to use for release ZIP packages")
-set(AP_RELEASE_VERSION "0.1.1_multiplayer_fix2" CACHE STRING "Optional release version for package filenames, e.g. 0.1.0")
+set(AP_RELEASE_VERSION "0.2.0" CACHE STRING "Optional release version for package filenames, e.g. 0.1.0")
 
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR "In-source builds not allowed. Please run \"cmake ..\" from the build directory. You may need to delete \"${CMAKE_SOURCE_DIR}/CMakeCache.txt\" first.")
