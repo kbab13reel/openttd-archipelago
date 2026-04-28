@@ -96,7 +96,8 @@ def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, 
       transport tier 1 (1,000)     → vehicle tier 1 (covered by has_cargo)
       transport tier 2 (5,000)     → vehicle tier 2
       transport tier 3 (10,000)    → vehicle tier 3
-      transport tier 4+ (50,000+)  → vehicle tier 4
+      transport tier 4 (50,000+)   → vehicle tier 4
+      transport tier 5+ (100,000+) → vehicle tier 5 (trains only — no other vehicle has 5 tiers)
     """
     vehicle_items = {
         "train": "Progressive Trains",
@@ -213,8 +214,9 @@ def set_all_rules(world: "OpenTTDWorld") -> None:
         loc_name = mission["location"]
         event_loc_name = f"Transport {CARGO_TIER_LABELS[tier - 1]} units of {cargo} Complete"
 
-        # Vehicle tier required: tier 1 is already handled by has_cargo; cap at 4.
-        vtier = min(tier, 4)
+        # Vehicle tier required: tier 1 is already handled by has_cargo; cap at 5 (trains have 5 tiers).
+        # Tiers 5+ effectively require trains since no other vehicle type has 5 progressive tiers.
+        vtier = min(tier, 5)
 
         if tier == 1:
             if locked_utilities and tier >= utilities_required_tier:

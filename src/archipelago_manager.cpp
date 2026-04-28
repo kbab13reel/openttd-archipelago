@@ -2344,14 +2344,17 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 					AP_OnItemReceived(_ap_replay_queue.front());
 					_ap_replay_queue.pop_front();
 				}
-				/* Then process one new (non-replay) item per tick */
-				if (!_ap_replay_queue.empty()) {
+				/* In singleplayer drain all new items immediately; in multiplayer
+				 * rate-limit to 10 per 250 ms tick so command queues stay healthy. */
+				const int new_item_limit = _networking ? 10 : INT_MAX;
+				for (int i = 0; i < new_item_limit && !_ap_replay_queue.empty(); i++) {
 					AP_OnItemReceived(_ap_replay_queue.front());
 					_ap_replay_queue.pop_front();
 				}
 			}
-			/* Drain up to 3 deferred engine-unlock commands per tick */
-			for (int i = 0; i < 3 && !_ap_deferred_cmds.empty(); i++) {
+			/* Drain deferred engine-unlock commands: unlimited in SP, 64/tick in MP. */
+			const int cmd_limit = _networking ? 64 : INT_MAX;
+			for (int i = 0; i < cmd_limit && !_ap_deferred_cmds.empty(); i++) {
 				_ap_deferred_cmds.front()();
 				_ap_deferred_cmds.pop_front();
 			}

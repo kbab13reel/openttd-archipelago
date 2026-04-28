@@ -775,6 +775,7 @@ struct ArchipelagoMissionsWindow : public Window {
 
 		/* Compute max line pixel width for hscrollbar range. */
 		const int icon_slot = (int)GetLargestCargoIconSize().width + 4;
+		const int dash_w = (int)GetStringBoundingBox("\u2014 ").width + (int)GetStringBoundingBox(" \u2014").width;
 		max_line_px = 0;
 		for (const auto &row : rows) {
 			std::string line;
@@ -786,10 +787,10 @@ struct ArchipelagoMissionsWindow : public Window {
 			} else if (row.mission) {
 				line = (row.mission->completed ? "[X] " : "[ ] ") + row.label;
 			}
-			/* Mission rows are indented 8 px; cargo headers append icon slot after text. */
+			/* Mission rows indented 8 px; cargo headers: two icon slots + dashes on each side. */
 			int indent = (row.type == MissionRow::MISSION) ? 8 : 0;
-			int icon_reserve = (row.type == MissionRow::CARGO_HEADER && IsValidCargoType(row.cargo_type)) ? icon_slot : 0;
-			int w = GetStringBoundingBox(line).width + indent + icon_reserve;
+			int extra = (row.type == MissionRow::CARGO_HEADER && IsValidCargoType(row.cargo_type)) ? (icon_slot * 2 + dash_w + 8) : 0;
+			int w = GetStringBoundingBox(line).width + indent + extra;
 			if (w > max_line_px) max_line_px = w;
 		}
 
@@ -861,20 +862,30 @@ struct ArchipelagoMissionsWindow : public Window {
 			} else if (row.type == MissionRow::CARGO_HEADER) {
 				std::string header = row.text;
 				if (row.delivered > 0) header += fmt::format("  {}", FmtNum(row.delivered));
-				int text_left = r.left + 4 + x_off;
-				int text_right = DrawString(text_left, r.right + max_line_px, y, header, TC_ORANGE, SA_LEFT | SA_FORCE);
+				int cur_x = r.left + 4 + x_off;
 				if (IsValidCargoType(row.cargo_type)) {
 					const CargoSpec *cs = CargoSpec::Get(row.cargo_type);
 					SpriteID spr = cs->GetCargoIcon();
-					if (spr != 0) {
-						Dimension max_d = GetLargestCargoIconSize();
-						Dimension d = GetSpriteSize(spr);
-						int slot_left = text_right + 4;
-						int slot_right = slot_left + (int)max_d.width;
-						DrawSprite(spr, PAL_NONE,
-							CentreBounds(slot_left, slot_right, d.width),
-							CentreBounds(y, y + rh, d.height));
-					}
+					Dimension max_d = GetLargestCargoIconSize();
+					Dimension d = (spr != 0) ? GetSpriteSize(spr) : Dimension{0, 0};
+					/* "— " prefix */
+					cur_x = DrawString(cur_x, r.right + max_line_px, y, "\u2014 ", TC_ORANGE, SA_LEFT | SA_FORCE) + 2;
+					/* left icon */
+					if (spr != 0) DrawSprite(spr, PAL_NONE,
+						CentreBounds(cur_x, cur_x + (int)max_d.width, d.width),
+						CentreBounds(y, y + rh, d.height));
+					cur_x += (int)max_d.width + 4;
+					/* cargo name */
+					cur_x = DrawString(cur_x, r.right + max_line_px, y, header, TC_ORANGE, SA_LEFT | SA_FORCE) + 4;
+					/* right icon */
+					if (spr != 0) DrawSprite(spr, PAL_NONE,
+						CentreBounds(cur_x, cur_x + (int)max_d.width, d.width),
+						CentreBounds(y, y + rh, d.height));
+					cur_x += (int)max_d.width + 2;
+					/* " —" suffix */
+					DrawString(cur_x, r.right + max_line_px, y, " \u2014", TC_ORANGE, SA_LEFT | SA_FORCE);
+				} else {
+					DrawString(cur_x, r.right + max_line_px, y, header, TC_ORANGE, SA_LEFT | SA_FORCE);
 				}
 			} else {
 				const APMission *m = row.mission;
@@ -1144,9 +1155,8 @@ struct ArchipelagoInventoryWindow : public Window {
 							Dimension max_d = GetLargestCargoIconSize();
 							Dimension d = GetSpriteSize(spr);
 							int slot_left = text_right + 4;
-							int slot_right = slot_left + (int)max_d.width;
 							DrawSprite(spr, PAL_NONE,
-								CentreBounds(slot_left, slot_right, d.width),
+								CentreBounds(slot_left, slot_left + (int)max_d.width, d.width),
 								CentreBounds(y, y + rh, d.height));
 						}
 					}

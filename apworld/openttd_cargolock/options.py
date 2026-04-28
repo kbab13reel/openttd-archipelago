@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from Options import (
     Choice, Range, Toggle, PerGameCommonOptions,
-    OptionGroup
+    OptionGroup, ItemDict
 )
 
 
@@ -75,6 +75,14 @@ class LockTerraforming(Toggle):
     When on, players cannot terraform land until 'Terraforming' is received."""
     display_name = "Lock Terraforming"
     default = 0
+
+class FillerWeights(ItemDict):
+    """Controls how often each filler item appears in the item pool.
+    Increase a value to make that filler more common, set to 0 to disable it.
+    Available fillers: Cash Injection, Choo chooo!"""
+    display_name = "Filler Weights"
+    valid_keys = ["Cash Injection", "Choo chooo!"]
+    default = {"Cash Injection": 10, "Choo chooo!": 10}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -388,7 +396,6 @@ class TownNames(Choice):
     option_catalan            = 20
     default = 0  # English (Original)
 
-
 class NumberOfTowns(Choice):
     """Initial number of towns."""
     display_name = "Number of Towns"
@@ -419,6 +426,7 @@ class OpenTTDOptions(PerGameCommonOptions):
     lock_tunnels:                    LockTunnels
     lock_canals:                     LockCanals
     lock_terraforming:               LockTerraforming
+    filler_weights:                  FillerWeights
 
     # Mission Options
     cargo_vehicle_mission_count:     CargoVehicleMissionCount
@@ -471,6 +479,7 @@ openttd_option_groups = [
         LockTunnels,
         LockCanals,
         LockTerraforming,
+        FillerWeights,
     ]),
     OptionGroup("Mission Options", [
         CargoVehicleMissionCount,

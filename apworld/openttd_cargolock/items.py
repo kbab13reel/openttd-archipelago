@@ -246,6 +246,13 @@ class OpenTTDItem(Item):
     game = "OpenTTD Cargolock"
 
 def get_random_filler_item_name(world: OpenTTDWorld) -> str:
+    weights_opt = getattr(world.options, "filler_weights", None)
+    if weights_opt is not None:
+        weights = {k: v for k, v in weights_opt.value.items() if k in FILLER_ITEMS and v > 0}
+        if weights:
+            names = list(weights.keys())
+            wvals = [weights[n] for n in names]
+            return world.random.choices(names, weights=wvals, k=1)[0]
     return world.random.choice(FILLER_ITEMS)
 
 def create_item_with_correct_classification(world: OpenTTDWorld, name: str) -> OpenTTDItem:
