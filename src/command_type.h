@@ -381,6 +381,10 @@ enum Commands : uint8_t {
 	CMD_AP_SET_ENGINE_UNLOCK,              ///< synchronize AP engine unlock state per company
 	CMD_AP_SET_AIRPORT_TIER,               ///< synchronize AP airport tier per company
 	CMD_AP_SET_UTILITY_UNLOCK,             ///< synchronize AP infrastructure (bridge/tunnel/canal/terraform) unlock per company
+	CMD_AP_COMPANY_SCANDAL,                ///< AP trap: set all town ratings to minimum for a company
+	CMD_AP_WILDFIRE,                       ///< AP trap: clear trees within radius of player stations
+	CMD_AP_SET_PAYMENT_MULT,               ///< AP effect: set global cargo payment multiplier (High Demand Period / Recession)
+	CMD_AP_TRIGGER_DISASTER,               ///< AP trap: trigger a specific disaster by index (synced across MP)
 
 	CMD_END,                          ///< Must ALWAYS be on the end of this list!! (period)
 };

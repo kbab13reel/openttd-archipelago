@@ -3,6 +3,7 @@ from Options import (
     Choice, Range, Toggle, PerGameCommonOptions,
     OptionGroup, ItemDict
 )
+from .items import FILLER_ITEMS, TRAP_ITEMS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -75,14 +76,6 @@ class LockTerraforming(Toggle):
     When on, players cannot terraform land until 'Terraforming' is received."""
     display_name = "Lock Terraforming"
     default = 0
-
-class FillerWeights(ItemDict):
-    """Controls how often each filler item appears in the item pool.
-    Increase a value to make that filler more common, set to 0 to disable it.
-    Available fillers: Cash Injection, Choo chooo!"""
-    display_name = "Filler Weights"
-    valid_keys = ["Cash Injection", "Choo chooo!"]
-    default = {"Cash Injection": 10, "Choo chooo!": 10}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -262,6 +255,91 @@ class RevealShopItems(Toggle):
 
 
 # ═══════════════════════════════════════════════════════════════
+#  FILLERS AND TRAPS
+# ═══════════════════════════════════════════════════════════════
+
+class FillerWeights(ItemDict):
+    """Controls how often each filler item appears in the item pool.
+    Increase a value to make that filler more common, set to 0 to disable it."""
+    display_name = "Filler Weights"
+    valid_keys = list(FILLER_ITEMS)
+    default = {k: 10 for k in FILLER_ITEMS}
+
+class HighDemandMonths(Range):
+    """How many in-game months a High Demand Period lasts."""
+    display_name = "High Demand Duration (Months)"
+    range_start = 1
+    range_end = 24
+    default = 6
+
+class HighDemandMultiplierPct(Range):
+    """Payment multiplier percentage during a High Demand Period.
+    150 = all cargo payments are 50% higher than normal."""
+    display_name = "High Demand Multiplier (%)"
+    range_start = 110
+    range_end = 300
+    default = 150
+
+class TrapFrequency(Range):
+    """Percentage of filler slots that are replaced with a trap item.
+    0 = no traps. 50 = half of all filler slots become traps. 100 = all fillers are traps."""
+    display_name = "Trap Frequency"
+    range_start = 0
+    range_end = 100
+    default = 0
+
+
+class TrapWeights(ItemDict):
+    """Controls how often each trap item appears when a filler slot is selected for a trap.
+    Increase a value to make that trap more common, set to 0 to disable it."""
+    display_name = "Trap Weights"
+    valid_keys = list(TRAP_ITEMS)
+    default = {k: 10 for k in TRAP_ITEMS}
+
+
+class RecessionMonths(Range):
+    """How many in-game months a Recession lasts before cargo payments return to normal."""
+    display_name = "Recession Duration (Months)"
+    range_start = 1
+    range_end = 24
+    default = 3
+
+
+class RecessionMultiplierPct(Range):
+    """Payment multiplier percentage during a Recession.
+    70 = cargo payments are cut to 70% of normal."""
+    display_name = "Recession Multiplier (%)"
+    range_start = 50
+    range_end = 95
+    default = 70
+
+
+class IndustryStrikeMonths(Range):
+    """How many in-game months an Industry Strike lasts before production resumes."""
+    display_name = "Industry Strike Duration (Months)"
+    range_start = 1
+    range_end = 24
+    default = 3
+
+
+class LabourStrikeMonths(Range):
+    """How many in-game months a Labour Strike lasts. Vehicles can be restarted manually at any time; the duration only controls the automatic recovery."""
+    display_name = "Labour Strike Duration (Months)"
+    range_start = 1
+    range_end = 24
+    default = 3
+
+
+class ReliabilityCrisisMonths(Range):
+    """How many in-game months a Reliability Crisis lasts before breakdowns return to normal."""
+    display_name = "Reliability Crisis Duration (Months)"
+    range_start = 1
+    range_end = 24
+    default = 3
+
+
+
+# ═══════════════════════════════════════════════════════════════
 #  WORLD GENERATION
 # ═══════════════════════════════════════════════════════════════
 
@@ -426,7 +504,6 @@ class OpenTTDOptions(PerGameCommonOptions):
     lock_tunnels:                    LockTunnels
     lock_canals:                     LockCanals
     lock_terraforming:               LockTerraforming
-    filler_weights:                  FillerWeights
 
     # Mission Options
     cargo_vehicle_mission_count:     CargoVehicleMissionCount
@@ -451,6 +528,18 @@ class OpenTTDOptions(PerGameCommonOptions):
     shop_cost_min:                   ShopCostMin
     shop_cost_max:                   ShopCostMax
     reveal_shop_items:               RevealShopItems
+
+    # Fillers and Traps
+    filler_weights:                  FillerWeights
+    trap_frequency:                  TrapFrequency
+    trap_weights:                    TrapWeights
+    recession_months:                RecessionMonths
+    recession_multiplier_pct:        RecessionMultiplierPct
+    industry_strike_months:          IndustryStrikeMonths
+    labour_strike_months:            LabourStrikeMonths
+    reliability_crisis_months:       ReliabilityCrisisMonths
+    high_demand_months:              HighDemandMonths
+    high_demand_multiplier_pct:      HighDemandMultiplierPct
 
     # World Generation
     start_year:                      StartYear
@@ -479,7 +568,6 @@ openttd_option_groups = [
         LockTunnels,
         LockCanals,
         LockTerraforming,
-        FillerWeights,
     ]),
     OptionGroup("Mission Options", [
         CargoVehicleMissionCount,
@@ -504,6 +592,18 @@ openttd_option_groups = [
         ShopCostMin,
         ShopCostMax,
         RevealShopItems,
+    ]),
+    OptionGroup("Fillers and Traps", [
+        FillerWeights,
+        TrapFrequency,
+        TrapWeights,
+        RecessionMonths,
+        RecessionMultiplierPct,
+        IndustryStrikeMonths,
+        LabourStrikeMonths,
+        ReliabilityCrisisMonths,
+        HighDemandMonths,
+        HighDemandMultiplierPct,
     ]),
     OptionGroup("World Generation", [
         StartYear,

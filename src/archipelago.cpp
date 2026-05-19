@@ -540,6 +540,15 @@ static APSlotData ParseSlotData(const json &msg)
 	sd.lock_canals       = GetBoolLike("lock_canals",        false);
 	sd.lock_terraforming = GetBoolLike("lock_terraforming",  false);
 
+	/* Trap / filler durations */
+	sd.recession_months          = d.value("recession_months",          3);
+	sd.recession_multiplier_pct  = d.value("recession_multiplier_pct",  70);
+	sd.industry_strike_months    = d.value("industry_strike_months",    3);
+	sd.labour_strike_months      = d.value("labour_strike_months",      3);
+	sd.reliability_crisis_months = d.value("reliability_crisis_months", 3);
+	sd.high_demand_months        = d.value("high_demand_months",        6);
+	sd.high_demand_multiplier_pct = d.value("high_demand_multiplier_pct", 150);
+
 	/* Parse missions array */
 	if (d.contains("missions") && d["missions"].is_array()) {
 		for (const auto &m : d["missions"]) {

@@ -9,6 +9,9 @@
 
 #include "stdafx.h"
 #include "archipelago_gui.h"  /* AP_GetCargoBonusActive() */
+
+/** Global cargo payment multiplier applied by Archipelago trap/filler items (100 = normal, 150 = +50%, 70 = recession). */
+int _ap_payment_multiplier_pct = 100;
 #include <ranges>
 #include "company_func.h"
 #include "command_func.h"
@@ -984,7 +987,7 @@ Money GetTransportedGoodsIncome(uint num_pieces, uint dist, uint16_t transit_per
 			/* "The result should be a signed multiplier that gets multiplied
 			 * by the amount of cargo moved and the price factor, then gets
 			 * divided by 8192." */
-			return result * num_pieces * cs->current_payment / 8192;
+			return result * num_pieces * cs->current_payment / 8192 * _ap_payment_multiplier_pct / 100;
 		}
 	}
 
@@ -1017,10 +1020,10 @@ Money GetTransportedGoodsIncome(uint num_pieces, uint dist, uint16_t transit_per
 	 */
 	if (periods_over_max > 0) {
 		const int time_factor = std::max(2 * MIN_TIME_FACTOR * TIME_FACTOR_FRAC * TIME_FACTOR_FRAC / (periods_over_max + 2 * TIME_FACTOR_FRAC), 1); // MIN_TIME_FACTOR / (x/(2 * TIME_FACTOR_FRAC) + 1) + 1, expressed as fixed point with TIME_FACTOR_FRAC_BITS.
-		return BigMulS(dist * time_factor * num_pieces, cs->current_payment, 21 + TIME_FACTOR_FRAC_BITS);
+		return BigMulS(dist * time_factor * num_pieces, cs->current_payment, 21 + TIME_FACTOR_FRAC_BITS) * _ap_payment_multiplier_pct / 100;
 	} else {
 		const int time_factor = std::max(MAX_TIME_FACTOR - periods_over_periods1 - periods_over_periods2, MIN_TIME_FACTOR);
-		return BigMulS(dist * time_factor * num_pieces, cs->current_payment, 21);
+		return BigMulS(dist * time_factor * num_pieces, cs->current_payment, 21) * _ap_payment_multiplier_pct / 100;
 	}
 }
 

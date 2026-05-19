@@ -998,3 +998,17 @@ void DisasterVehicle::UpdateDeltaXY()
 {
 	this->bounds = {{-1, -1, 0}, {2, 2, 5}, {}};
 }
+
+/**
+ * Trigger a specific disaster by index into the _disasters array.
+ * Intended for use by the Archipelago trap system.
+ * Index mapping (mirrors the static _disasters[] table above):
+ *   0 = Zeppelin, 1 = Small UFO, 2 = Airplane, 3 = Helicopter,
+ *   4 = Big UFO,  5 = Small Submarine, 6 = Big Submarine, 7 = Coal Mine.
+ * @param index Index into _disasters[].
+ */
+void AP_TriggerDisaster(uint8_t index)
+{
+	if (index >= std::size(_disasters)) return;
+	_disasters[index].init_proc();
+}

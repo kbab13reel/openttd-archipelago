@@ -152,4 +152,13 @@ class OpenTTDWorld(World):
             "lock_canals":            self.options.lock_canals.value,
             "lock_terraforming":      self.options.lock_terraforming.value,
             "utilities_required_tier": self.options.utilities_required_tier.value,
+
+            # Trap / filler durations
+            "recession_months":           self.options.recession_months.value,
+            "recession_multiplier_pct":    self.options.recession_multiplier_pct.value,
+            "industry_strike_months":     self.options.industry_strike_months.value,
+            "labour_strike_months":       self.options.labour_strike_months.value,
+            "reliability_crisis_months":  self.options.reliability_crisis_months.value,
+            "high_demand_months":         self.options.high_demand_months.value,
+            "high_demand_multiplier_pct": self.options.high_demand_multiplier_pct.value,
         }

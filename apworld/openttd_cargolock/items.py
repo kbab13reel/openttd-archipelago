@@ -182,7 +182,31 @@ COMPANY_COLOUR_ITEMS = [
 
 FILLER_ITEMS: List[str] = [
     "Cash Injection",
-    "Choo chooo!"
+    "Choo chooo!",
+    "Town Development Fund",
+    "Civic Honours",
+    "High Demand Period",
+    "Surge Production",
+    "New CEO",
+]
+
+# Trap items are registered here as they are implemented.
+TRAP_ITEMS: List[str] = [
+    "Town Roadworks",
+    "Recession",
+    "Industry Strike",
+    "Labour Strike",
+    "Reliability Crisis",
+    "Company Scandal",
+    "Wildfire",
+    "Zeppelin Attack",
+    "UFO Invasion",
+    "Warplane Attack",
+    "Helicopter Raid",
+    "Alien Invasion",
+    "Submarine Scout",
+    "Submarine Attack",
+    "Coal Mine Collapse",
 ]
 
 ITEM_NAME_TO_ID = {
@@ -201,9 +225,31 @@ ITEM_NAME_TO_ID = {
     "Iron Ore": 13,
     "Steel": 14,
     "Valuables": 15,
+    "Progressive Shop Upgrade": 18,
+    # Filler items 
     "Cash Injection": 16,
     "Choo chooo!": 17,
-    "Progressive Shop Upgrade": 18
+    "Town Development Fund": 39,
+    "Civic Honours": 40,
+    "High Demand Period": 41,
+    "Surge Production": 42,
+    "New CEO": 43,
+    # Trap items (IDs 44–58)
+    "Town Roadworks": 44,
+    "Recession": 45,
+    "Industry Strike": 46,
+    "Labour Strike": 47,
+    "Reliability Crisis": 48,
+    "Company Scandal": 49,
+    "Wildfire": 50,
+    "Zeppelin Attack": 51,
+    "UFO Invasion": 52,
+    "Warplane Attack": 53,
+    "Helicopter Raid": 54,
+    "Alien Invasion": 55,
+    "Submarine Scout": 56,
+    "Submarine Attack": 57,
+    "Coal Mine Collapse": 58,
 }
 
 for i, colour_item in enumerate(COMPANY_COLOUR_ITEMS, start=19):
@@ -233,7 +279,12 @@ DEFAULT_ITEM_CLASSIFICATION = {
     "Steel": ItemClassification.progression | ItemClassification.useful,
     "Valuables": ItemClassification.progression | ItemClassification.useful,
     "Cash Injection": ItemClassification.filler,
-    "Choo chooo!": ItemClassification.filler
+    "Choo chooo!": ItemClassification.filler,
+    "Town Development Fund": ItemClassification.filler,
+    "Civic Honours": ItemClassification.filler,
+    "High Demand Period": ItemClassification.filler,
+    "Surge Production": ItemClassification.filler,
+    "New CEO": ItemClassification.filler,
 }
 
 for colour_item in COMPANY_COLOUR_ITEMS:
@@ -242,10 +293,28 @@ for colour_item in COMPANY_COLOUR_ITEMS:
 for utility_item in UTILITY_ITEMS:
     DEFAULT_ITEM_CLASSIFICATION[utility_item] = ItemClassification.progression | ItemClassification.useful
 
+for trap_item in TRAP_ITEMS:
+    DEFAULT_ITEM_CLASSIFICATION[trap_item] = ItemClassification.trap
+
 class OpenTTDItem(Item):
     game = "OpenTTD Cargolock"
 
+def get_random_trap_item_name(world: OpenTTDWorld) -> str:
+    weights_opt = getattr(world.options, "trap_weights", None)
+    if weights_opt is not None:
+        weights = {k: v for k, v in weights_opt.value.items() if k in TRAP_ITEMS and v > 0}
+        if weights:
+            names = list(weights.keys())
+            wvals = [weights[n] for n in names]
+            return world.random.choices(names, weights=wvals, k=1)[0]
+    return world.random.choice(TRAP_ITEMS)
+
 def get_random_filler_item_name(world: OpenTTDWorld) -> str:
+    # If traps are configured, randomly replace this filler slot with a trap.
+    trap_freq = getattr(world.options, "trap_frequency", None)
+    if trap_freq is not None and TRAP_ITEMS and trap_freq.value > 0:
+        if world.random.randrange(100) < trap_freq.value:
+            return get_random_trap_item_name(world)
     weights_opt = getattr(world.options, "filler_weights", None)
     if weights_opt is not None:
         weights = {k: v for k, v in weights_opt.value.items() if k in FILLER_ITEMS and v > 0}

@@ -433,6 +433,7 @@ enum APStatusWidgets : WidgetID {
 	WAPST_BTN_MISSIONS,
 	WAPST_BTN_INVENTORY,
 	WAPST_BTN_SHOP,
+	WAPST_BTN_CONSOLE,
 	WAPST_SEL_SETTINGS,
 	WAPST_BTN_SETTINGS_CONNECTED,
 	WAPST_BTN_SETTINGS_DISCONNECTED,
@@ -457,6 +458,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ap_status_widgets = 
 					NWidget(WWT_PUSHTXTBTN, COLOUR_RED,   WAPST_BTN_SETTINGS_DISCONNECTED), SetStringTip(STR_EMPTY), SetMinimalSize(74, 14),
 				EndContainer(),
 			EndContainer(),
+			NWidget(WWT_PUSHTXTBTN, COLOUR_DARK_BLUE, WAPST_BTN_CONSOLE), SetStringTip(STR_ARCHIPELAGO_BTN_CONSOLE), SetMinimalSize(60, 14), SetFill(1, 0),
 		EndContainer(),
 	EndContainer(),
 };
@@ -551,6 +553,9 @@ struct ArchipelagoStatusWindow : public Window {
 				break;
 			case WAPST_BTN_SHOP:
 				ShowArchipelagoShopWindow();
+				break;
+			case WAPST_BTN_CONSOLE:
+				ShowArchipelagoConsoleWindow();
 				break;
 			case WAPST_BTN_SETTINGS_CONNECTED:
 			case WAPST_BTN_SETTINGS_DISCONNECTED:
@@ -1460,4 +1465,156 @@ void ShowArchipelagoShopWindow()
 	const APSlotData &sd = AP_GetSlotData();
 	if (!sd.enable_shop || sd.shop_locations.empty()) return;
 	AllocateWindowDescFront<ArchipelagoShopWindow>(_ap_shop_desc, 6);
+}
+
+/* =========================================================================
+ * AP CONSOLE WINDOW — scrollable AP message log + text input to AP server
+ * ========================================================================= */
+
+enum APConsoleWidgets : WidgetID {
+	WAPCONSOLE_LIST,
+	WAPCONSOLE_SCROLLBAR,
+	WAPCONSOLE_INPUT,
+	WAPCONSOLE_SEND,
+};
+
+static constexpr std::initializer_list<NWidgetPart> _nested_ap_console_widgets = {
+	NWidget(NWID_HORIZONTAL),
+		NWidget(WWT_CLOSEBOX, COLOUR_DARK_BLUE),
+		NWidget(WWT_CAPTION, COLOUR_DARK_BLUE), SetStringTip(STR_ARCHIPELAGO_CONSOLE_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS), SetFill(1, 0), SetResize(1, 0),
+		NWidget(WWT_STICKYBOX, COLOUR_DARK_BLUE),
+	EndContainer(),
+	NWidget(WWT_PANEL, COLOUR_DARK_BLUE), SetResize(1, 1),
+		NWidget(NWID_HORIZONTAL),
+			NWidget(WWT_PANEL, COLOUR_DARK_BLUE, WAPCONSOLE_LIST), SetMinimalSize(400, 180), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPCONSOLE_SCROLLBAR), EndContainer(),
+			NWidget(NWID_VSCROLLBAR, COLOUR_DARK_BLUE, WAPCONSOLE_SCROLLBAR),
+		EndContainer(),
+		NWidget(NWID_HORIZONTAL),
+			NWidget(WWT_EDITBOX, COLOUR_GREY, WAPCONSOLE_INPUT), SetMinimalSize(300, 14), SetFill(1, 0), SetResize(1, 0), SetStringTip(STR_EMPTY),
+			NWidget(WWT_PUSHTXTBTN, COLOUR_DARK_BLUE, WAPCONSOLE_SEND), SetMinimalSize(60, 14), SetStringTip(STR_ARCHIPELAGO_CONSOLE_SEND),
+			NWidget(WWT_RESIZEBOX, COLOUR_DARK_BLUE),
+		EndContainer(),
+	EndContainer(),
+};
+
+struct ArchipelagoConsoleWindow : public Window {
+	QueryString input_buf;
+	int row_height = 0;
+	Scrollbar *scrollbar = nullptr;
+	uint32_t last_console_gen = UINT32_MAX;
+	bool at_bottom = true;
+
+	ArchipelagoConsoleWindow(WindowDesc &desc, WindowNumber wnum)
+		: Window(desc), input_buf(512)
+	{
+		this->row_height = GetCharacterHeight(FS_NORMAL) + 2;
+		this->CreateNestedTree();
+		this->querystrings[WAPCONSOLE_INPUT] = &input_buf;
+		this->input_buf.ok_button = WAPCONSOLE_SEND;
+		this->scrollbar = this->GetScrollbar(WAPCONSOLE_SCROLLBAR);
+		this->scrollbar->SetStepSize(1);
+		this->FinishInitNested(wnum);
+		this->resize.step_height = row_height;
+		this->resize.step_width = 1;
+		UpdateScrollbar();
+		ScrollToBottom();
+		this->SetFocusedWidget(WAPCONSOLE_INPUT);
+	}
+
+	void UpdateScrollbar()
+	{
+		const auto &log = AP_GetConsoleLog();
+		this->scrollbar->SetCount((int)log.size());
+		NWidgetBase *nw = this->GetWidget<NWidgetBase>(WAPCONSOLE_LIST);
+		if (nw != nullptr) {
+			int visible = (int)nw->current_y / row_height;
+			this->scrollbar->SetCapacity(std::max(1, visible));
+		}
+	}
+
+	void ScrollToBottom()
+	{
+		const auto &log = AP_GetConsoleLog();
+		int cap = this->scrollbar->GetCapacity();
+		int new_pos = std::max(0, (int)log.size() - cap);
+		this->scrollbar->SetPosition(new_pos);
+	}
+
+	void OnRealtimeTick([[maybe_unused]] uint delta_ms) override
+	{
+		uint32_t g = _ap_console_generation.load(std::memory_order_relaxed);
+		if (g != last_console_gen) {
+			last_console_gen = g;
+			bool was_at_bottom = at_bottom;
+			UpdateScrollbar();
+			if (was_at_bottom) ScrollToBottom();
+			this->SetDirty();
+		}
+	}
+
+	void DrawWidget(const Rect &r, WidgetID widget) const override
+	{
+		if (widget != WAPCONSOLE_LIST) return;
+		GfxFillRect(r.left, r.top, r.right, r.bottom, PC_BLACK);
+		const auto &log = AP_GetConsoleLog();
+		int first = this->scrollbar->GetPosition();
+		int last  = std::min((int)log.size(), first + (int)r.Height() / row_height + 1);
+		int y = r.top + 2;
+		for (int i = first; i < last; i++) {
+			const APConsoleEntry &entry = log[i];
+			DrawString(r.left + 4, r.right - 4, y, entry.text, entry.colour, SA_LEFT | SA_FORCE);
+			y += row_height;
+			if (y > r.bottom) break;
+		}
+	}
+
+	void OnPaint() override { this->DrawWidgets(); }
+
+	void OnClick([[maybe_unused]] Point pt, WidgetID widget, [[maybe_unused]] int cc) override
+	{
+		if (widget == WAPCONSOLE_SEND) {
+			std::string text = std::string(this->input_buf.text.GetText());
+			if (!text.empty()) {
+				AP_SendConsoleInput(text);
+				this->input_buf.text.Assign("");
+				this->SetWidgetDirty(WAPCONSOLE_INPUT);
+			}
+		}
+	}
+
+	void OnScrollbarScroll([[maybe_unused]] WidgetID widget) override
+	{
+		const auto &log = AP_GetConsoleLog();
+		int pos = this->scrollbar->GetPosition();
+		int cap = this->scrollbar->GetCapacity();
+		at_bottom = (pos + cap >= (int)log.size());
+		this->SetDirty();
+	}
+
+	void OnResize() override
+	{
+		UpdateScrollbar();
+		if (at_bottom) ScrollToBottom();
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding,
+	                      [[maybe_unused]] Dimension &fill, Dimension &resize) override
+	{
+		if (widget == WAPCONSOLE_LIST) {
+			resize.height = row_height;
+			resize.width  = 1;
+			size.height   = std::max(size.height, (uint)(row_height * 14));
+		}
+	}
+};
+
+static WindowDesc _ap_console_desc(
+	WDP_AUTO, {"ap_console"}, 460, 320,
+	WC_ARCHIPELAGO, WC_NONE, {},
+	_nested_ap_console_widgets
+);
+
+void ShowArchipelagoConsoleWindow()
+{
+	AllocateWindowDescFront<ArchipelagoConsoleWindow>(_ap_console_desc, 7);
 }

@@ -34,6 +34,7 @@
 #include "company_func.h"
 #include "company_base.h"
 #include "company_cmd.h"
+#include "company_manager_face.h"
 #include "archipelago_cmd.h"
 #include "vehicle_base.h"
 #include "industry.h"
@@ -82,6 +83,11 @@
 #include "network/network_server.h"
 #include "network/network_gui.h"
 #include "misc_cmd.h"
+#include "vehicle_cmd.h"
+#include "industry_cmd.h"
+#include "town_cmd.h"
+#include "settings_cmd.h"
+#include "vehiclelist.h"
 #include "safeguards.h"
 
 #include <array>
@@ -966,7 +972,9 @@ static std::string AP_TrimAPPrefix(std::string text)
 	return text;
 }
 
-static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintColour::DEFAULT)
+static void AP_PushToConsole(const std::string &text, TextColour colour); // forward declaration — defined after _ap_console_log
+
+static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintColour::DEFAULT, NewsType news_type = NewsType::General, NewsStyle news_style = NewsStyle::Small, StringID company_title = INVALID_STRING_ID)
 {
 	/* Normalize server/client messages so console/news never show duplicated
 	 * tags like "[AP] [AP] ...". */
@@ -991,12 +999,21 @@ static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintC
 	}
 
 	if (_game_mode == GM_NORMAL) {
-		AddNewsItem(
-			GetEncodedString(STR_ARCHIPELAGO_NEWS, clean),
-			NewsType::General,
-			NewsStyle::Small,
-			{}
-		);
+		if (company_title != INVALID_STRING_ID) {
+			const Company *c = Company::GetIfValid(_local_company);
+			if (c != nullptr) {
+				AddNewsItem(GetEncodedString(STR_ARCHIPELAGO_NEWS, clean), news_type, NewsStyle::Company, {}, {}, {}, std::make_unique<CompanyNewsInformation>(company_title, c));
+			} else {
+				AddNewsItem(GetEncodedString(STR_ARCHIPELAGO_NEWS, clean), news_type, NewsStyle::Normal, {});
+			}
+		} else {
+			AddNewsItem(
+				GetEncodedString(STR_ARCHIPELAGO_NEWS, clean),
+				news_type,
+				news_style,
+				{}
+			);
+		}
 	}
 }
 
@@ -1006,6 +1023,9 @@ static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintC
 
 /* _ap_pending_sd and _ap_deferred_cmds are declared near the top of the file
  * (before AP_OnItemReceived) so they are visible at their first point of use. */
+
+/* Forward declaration — defined after the monthly timer below */
+static int64_t AP_FlatEconMonth();
 static bool        _ap_pending_world_start         = false;
 static bool        _ap_goal_sent                   = false;
 static bool        _ap_session_started             = false; ///< True once we've done first-tick setup in GM_NORMAL
@@ -1026,6 +1046,18 @@ static int64_t _ap_saved_items_index = 0; ///< Highest items_received_index seen
 int64_t  AP_GetSavedItemsIndex()                  { return _ap_saved_items_index; }
 void     AP_SetSavedItemsIndex(int64_t v)         { _ap_saved_items_index = v; }
 void AP_RestoreItemsIndexBeforeConnect();  /* forward decl — exported, defined later */
+
+/* ── Timed effect state (AP trap / filler items) ──────────────────────── */
+/* All expiry values are "flat economy month" counters (year*12 + month).  *
+ * A value of -1 means the effect is not active.                           */
+static int64_t  _ap_high_demand_expiry         = -1;
+static int64_t  _ap_recession_expiry           = -1;
+static int64_t  _ap_industry_strike_expiry     = -1;
+static IndustryID _ap_industry_strike_id       = IndustryID::Invalid();
+static uint8_t  _ap_industry_strike_saved_level = 0;
+static int64_t  _ap_labour_strike_expiry       = -1;
+static int64_t  _ap_breakdowns_expiry          = -1;
+static uint8_t  _ap_breakdowns_saved_setting   = 2;
 
 /* Items received before we've entered GM_NORMAL are queued here */
 static std::vector<APItem> _ap_pending_items;
@@ -1056,6 +1088,25 @@ static void AP_ResetProgressStateForNewSlot()
 
 /* Exposed for GUI polling — monotonically increasing; each window tracks its own last-seen value */
 std::atomic<uint32_t> _ap_status_generation{ 0 };
+std::atomic<uint32_t> _ap_console_generation{ 0 };
+
+/* AP console ring buffer — holds the last AP_CONSOLE_MAX messages for the in-game console window */
+static constexpr size_t AP_CONSOLE_MAX = 300;
+static std::deque<APConsoleEntry> _ap_console_log;
+
+static void AP_PushToConsole(const std::string &text, TextColour colour)
+{
+	_ap_console_log.push_back({text, colour});
+	if (_ap_console_log.size() > AP_CONSOLE_MAX) _ap_console_log.pop_front();
+	_ap_console_generation.fetch_add(1, std::memory_order_relaxed);
+}
+
+const std::deque<APConsoleEntry> &AP_GetConsoleLog() { return _ap_console_log; }
+
+void AP_SendConsoleInput(const std::string &text)
+{
+	AP_SendSay(text);
+}
 
 /* Public accessors */
 const APSlotData                   &AP_GetSlotData()           { return _ap_pending_sd; }
@@ -1101,7 +1152,7 @@ bool AP_PurchaseShopLocation(const std::string &location_name)
 
 	Money available = GetAvailableMoney(_local_company);
 	if (available < (Money)it->cost) {
-		AP_ShowNews("Not enough money for " + it->name + ".", APPrintColour::RED);
+		IConsolePrint(CC_ERROR, "AP: Not enough money to purchase " + it->name + ".");
 		return false;
 	}
 
@@ -1109,7 +1160,6 @@ bool AP_PurchaseShopLocation(const std::string &location_name)
 	Command<CMD_AP_MONEY>::Post(-(Money)it->cost);
 	_ap_purchased_shop_locations.insert(location_name);
 	AP_SendCheckByName(location_name);
-	AP_ShowNews(fmt::format("Purchased {} for {}.", it->name, it->cost), APPrintColour::GREEN);
 	SetWindowClassesDirty(WC_ARCHIPELAGO);
 	_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
 	return true;
@@ -1274,7 +1324,7 @@ static void AP_OnItemReceived(const APItem &item)
 
 	/* Progressive vehicle unlock — delegate entirely to EnableEngineForCompany */
 	if (AP_UnlockEngineByName(item.item_name)) {
-		if (!is_replay) AP_ShowNews("Unlocked: " + item.item_name);
+		if (!is_replay) { AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_VEHICLE_UNLOCK, item.item_name), APPrintColour::DEFAULT, NewsType::NewVehicles); }
 		return;
 	}
 
@@ -1284,7 +1334,7 @@ static void AP_OnItemReceived(const APItem &item)
 			_ap_utility_unlocked[i] = true;
 			/* Synchronize unlock across all machines (host + all clients) via DoCommand. */
 			Command<CMD_AP_SET_UTILITY_UNLOCK>::Post(_local_company, (uint8_t)i, true);
-			if (!is_replay) AP_ShowNews("Infrastructure unlocked: " + item.item_name);
+			if (!is_replay) { AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_INFRA_UNLOCK, item.item_name), APPrintColour::DEFAULT, NewsType::CompanyInfo, NewsStyle::Normal); }
 			SetWindowClassesDirty(WC_ARCHIPELAGO);
 			_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
 			/* Re-grey terraform/bridge/canal toolbar buttons immediately. */
@@ -1306,7 +1356,7 @@ static void AP_OnItemReceived(const APItem &item)
 			Command<CMD_AP_SET_CARGO_UNLOCK>::Post(_local_company, (uint8_t)ct, true);
 			AP_ApplyCargoWagonUnlocks(_local_company);
 		}
-		if (!is_replay) AP_ShowNews("Cargo type unlocked: " + item.item_name);
+		if (!is_replay) { AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_CARGO_UNLOCK, item.item_name), APPrintColour::DEFAULT, NewsType::Acceptance, NewsStyle::Normal); }
 		SetWindowClassesDirty(WC_ARCHIPELAGO);
 		_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
 		return;
@@ -1314,7 +1364,7 @@ static void AP_OnItemReceived(const APItem &item)
 
 	if (item.item_name == "Progressive Shop Upgrade") {
 		if (!is_replay && AP_GetSlotData().enable_shop) {
-			AP_ShowNews(fmt::format("Shop expanded: {}/{} locations visible.", AP_GetVisibleShopLocationCount(), _ap_pending_sd.shop_locations.size()));
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SHOP_EXPANDED, (uint64_t)AP_GetVisibleShopLocationCount(), (uint64_t)_ap_pending_sd.shop_locations.size()), APPrintColour::DEFAULT, NewsType::CompanyInfo);
 		}
 		SetWindowClassesDirty(WC_ARCHIPELAGO);
 		_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
@@ -1323,7 +1373,7 @@ static void AP_OnItemReceived(const APItem &item)
 
 	/* -- Company colour items ------------------------------------- */
 	if (AP_TryUnlockCompanyColour(item.item_name)) {
-		if (!is_replay) AP_ShowNews("Company colour unlocked: " + item.item_name.substr(std::string("Company Colour: ").size()));
+		if (!is_replay) { AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_COLOUR_UNLOCK, item.item_name.substr(std::string("Company Colour: ").size())), APPrintColour::DEFAULT, NewsType::CompanyInfo); }
 		return;
 	}
 
@@ -1331,12 +1381,226 @@ static void AP_OnItemReceived(const APItem &item)
 	if (item.item_name == "Cash Injection") {
 		if (!is_replay && _ap_is_primary) {
 			Command<CMD_AP_MONEY>::Post((Money)50000LL);
-			AP_ShowNews("Bonus: +" + AP_FormatLocalCurrency(50000) + "!");
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_CASH_BONUS, (uint64_t)(Money)50000LL), APPrintColour::GREEN, NewsType::Economy);
 		}
 		return;
 	}
 	if (item.item_name == "Choo chooo!") {
-		if (!is_replay) AP_ShowNews("Choo chooo!");
+		if (!is_replay) AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_CHOO_CHOO));
+		return;
+	}
+
+	/* -- New filler items ----------------------------------------- */
+
+	if (item.item_name == "Town Development Fund") {
+		if (!is_replay && _ap_is_primary) {
+			/* Find the largest player town and fund new buildings */
+			const Town *best = nullptr;
+			for (const Town *t : Town::Iterate()) {
+				if (best == nullptr || t->cache.population > best->cache.population) best = t;
+			}
+			if (best != nullptr) {
+				Command<CMD_AP_MONEY>::Post((Money)2000000LL);
+				Command<CMD_DO_TOWN_ACTION>::Post(best->xy, best->index, TownAction::FundBuildings);
+			}
+			/* Town development news is generated by the vanilla TownActionFundBuildings handler */
+		}
+		return;
+	}
+
+	if (item.item_name == "Civic Honours") {
+		if (!is_replay && _ap_is_primary) {
+			/* Find a town that doesn't have a statue yet */
+			const Town *best = nullptr;
+			for (const Town *t : Town::Iterate()) {
+				if (t->statues.Test(_local_company)) continue;
+				if (best == nullptr || t->cache.population > best->cache.population) best = t;
+			}
+			if (best != nullptr) {
+				Command<CMD_AP_MONEY>::Post((Money)2000000LL);
+				Command<CMD_DO_TOWN_ACTION>::Post(best->xy, best->index, TownAction::BuildStatue);
+				AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_CIVIC_HONOURS), APPrintColour::DEFAULT, NewsType::CompanyInfo, NewsStyle::Small, STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_HONOURS);
+			}
+		}
+		return;
+	}
+
+	if (item.item_name == "High Demand Period") {
+		if (!is_replay && _ap_is_primary) {
+			const APSlotData &sd = AP_GetSlotData();
+			Command<CMD_AP_SET_PAYMENT_MULT>::Post((int32_t)sd.high_demand_multiplier_pct);
+			_ap_high_demand_expiry = AP_FlatEconMonth() + sd.high_demand_months;
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_HIGH_DEMAND, (uint64_t)(sd.high_demand_multiplier_pct - 100), (uint64_t)sd.high_demand_months), APPrintColour::DEFAULT, NewsType::Economy, NewsStyle::Normal);
+		}
+		return;
+	}
+
+	if (item.item_name == "Surge Production") {
+		if (!is_replay && _ap_is_primary) {
+			/* Find the most-active industry producing for this company */
+			Industry *best = nullptr;
+			uint32_t best_prod = 0;
+			for (Industry *ind : Industry::Iterate()) {
+				uint32_t total = 0;
+				for (const auto &p : ind->produced) total += p.history[LAST_MONTH].production;
+				if (total > best_prod) { best_prod = total; best = ind; }
+			}
+			if (best != nullptr) {
+				_ap_industry_strike_saved_level = best->prod_level;
+				_ap_industry_strike_id          = best->index;
+				_ap_industry_strike_expiry      = AP_FlatEconMonth() + AP_GetSlotData().industry_strike_months;
+				Command<CMD_INDUSTRY_SET_PRODUCTION>::Post(best->index,
+					(uint8_t)PRODLEVEL_MAXIMUM, false, EncodedString{});
+				AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SURGE_PRODUCTION), APPrintColour::DEFAULT, NewsType::IndustryCompany, NewsStyle::Normal);
+			}
+		}
+		return;
+	}
+
+	if (item.item_name == "New CEO") {
+		if (!is_replay && _ap_is_primary) {
+			/* Randomise the company manager face using an interactive random seed. */
+			const Company *c = Company::GetIfValid(_local_company);
+			if (c != nullptr) {
+				/* Build a new random face locally and post it as a command so all
+				 * peers in MP see the same face. */
+				Randomizer rng;
+				rng.SetSeed(InteractiveRandom());
+				CompanyManagerFace new_face = c->face;
+				RandomiseCompanyManagerFace(new_face, rng);
+				Command<CMD_SET_COMPANY_MANAGER_FACE>::Post(new_face.style, new_face.bits);
+				/* Reset the president name so it is regenerated from the new random seed. */
+				Command<CMD_RENAME_PRESIDENT>::Post(std::string{});
+			}
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_NEW_CEO), APPrintColour::DEFAULT, NewsType::CompanyInfo, NewsStyle::Small, STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_NEW_CEO);
+		}
+		return;
+	}
+
+	/* -- Trap items ----------------------------------------------- */
+
+	if (item.item_name == "Town Roadworks") {
+		if (!is_replay && _ap_is_primary) {
+			const Town *best = nullptr;
+			for (const Town *t : Town::Iterate()) {
+				if (best == nullptr || t->cache.population > best->cache.population) best = t;
+			}
+			if (best != nullptr) {
+				Command<CMD_AP_MONEY>::Post((Money)2000000LL);
+				Command<CMD_DO_TOWN_ACTION>::Post(best->xy, best->index, TownAction::RoadRebuild);
+			}
+			/* Road rebuild news is generated by the vanilla TownActionRoadRebuild handler */
+		}
+		return;
+	}
+
+	if (item.item_name == "Recession") {
+		if (!is_replay && _ap_is_primary) {
+			const APSlotData &sd = AP_GetSlotData();
+			const int months = sd.recession_months;
+			Command<CMD_AP_SET_PAYMENT_MULT>::Post((int32_t)sd.recession_multiplier_pct);
+			_ap_recession_expiry = AP_FlatEconMonth() + months;
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_RECESSION, (uint64_t)sd.recession_multiplier_pct, (uint64_t)months), APPrintColour::DEFAULT, NewsType::Economy, NewsStyle::Normal);
+		}
+		return;
+	}
+
+	if (item.item_name == "Industry Strike") {
+		if (!is_replay && _ap_is_primary) {
+			Industry *best = nullptr;
+			uint32_t best_prod = 0;
+			for (Industry *ind : Industry::Iterate()) {
+				uint32_t total = 0;
+				for (const auto &p : ind->produced) total += p.history[LAST_MONTH].production;
+				if (total > best_prod) { best_prod = total; best = ind; }
+			}
+			if (best != nullptr) {
+				const int months = AP_GetSlotData().industry_strike_months;
+				_ap_industry_strike_saved_level = best->prod_level;
+				_ap_industry_strike_id          = best->index;
+				_ap_industry_strike_expiry      = AP_FlatEconMonth() + months;
+				Command<CMD_INDUSTRY_SET_PRODUCTION>::Post(best->index,
+					(uint8_t)PRODLEVEL_MINIMUM, false, EncodedString{});
+				AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_INDUSTRY_STRIKE, (uint64_t)months), APPrintColour::DEFAULT, NewsType::IndustryCompany, NewsStyle::Normal);
+			}
+		}
+		return;
+	}
+
+	if (item.item_name == "Labour Strike") {
+		if (!is_replay && _ap_is_primary) {
+			const int months = AP_GetSlotData().labour_strike_months;
+			for (VehicleType vt : {VEH_TRAIN, VEH_ROAD, VEH_SHIP, VEH_AIRCRAFT}) {
+				Command<CMD_MASS_START_STOP>::Post(TileIndex{}, false, true,
+					VehicleListIdentifier(VL_STANDARD, vt, _local_company));
+			}
+			_ap_labour_strike_expiry = AP_FlatEconMonth() + months;
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_LABOUR_STRIKE, (uint64_t)months), APPrintColour::DEFAULT, NewsType::Advice, NewsStyle::Normal);
+		}
+		return;
+	}
+
+	if (item.item_name == "Reliability Crisis") {
+		if (!is_replay && _ap_is_primary) {
+			const int months = AP_GetSlotData().reliability_crisis_months;
+			_ap_breakdowns_saved_setting = (uint8_t)_settings_game.difficulty.vehicle_breakdowns;
+			_ap_breakdowns_expiry        = AP_FlatEconMonth() + months;
+			Command<CMD_CHANGE_SETTING>::Post("difficulty.vehicle_breakdowns", 2);
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_RELIABILITY_CRISIS, (uint64_t)months), APPrintColour::DEFAULT, NewsType::Advice, NewsStyle::Normal);
+		}
+		return;
+	}
+
+	if (item.item_name == "Company Scandal") {
+		if (!is_replay && _ap_is_primary) {
+			Command<CMD_AP_COMPANY_SCANDAL>::Post(_local_company);
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_COMPANY_SCANDAL), APPrintColour::DEFAULT, NewsType::CompanyInfo, NewsStyle::Small, STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_SCANDAL);
+		}
+		return;
+	}
+
+	if (item.item_name == "Wildfire") {
+		if (!is_replay && _ap_is_primary) {
+			Command<CMD_AP_WILDFIRE>::Post(_local_company);
+			/* Find a station owned by the local company for the news viewport. */
+			TileIndex viewport_tile = INVALID_TILE;
+			for (const Station *st : Station::Iterate()) {
+				if (st->owner == _local_company) { viewport_tile = st->xy; break; }
+			}
+			NewsReference news_ref = (viewport_tile != INVALID_TILE) ? NewsReference{viewport_tile} : NewsReference{};
+			std::string clean = AP_TrimAPPrefix(GetString(STR_ARCHIPELAGO_NEWS_WILDFIRE));
+			const TextColour console_colour = AP_ToConsoleColour(APPrintColour::DEFAULT);
+			IConsolePrint(console_colour, "AP: " + clean);
+			Debug(misc, 0, "[AP] {}", clean);
+			if (_networking) {
+				NetworkTextMessage(NETWORK_ACTION_EXTERNAL_CHAT, console_colour, false, "Server", clean, std::string("AP"));
+			}
+			if (_game_mode == GM_NORMAL) {
+				AddNewsItem(GetEncodedString(STR_ARCHIPELAGO_NEWS, clean), NewsType::Accident, NewsStyle::Normal, {}, news_ref);
+			}
+		}
+		return;
+	}
+
+	/* Disaster trap items — trigger by index into the _disasters[] array */
+	static const std::map<std::string, uint8_t> DISASTER_ITEMS = {
+		{"Zeppelin Attack",    0},
+		{"UFO Invasion",       1},
+		{"Warplane Attack",    2},
+		{"Helicopter Raid",    3},
+		{"Alien Invasion",     4},
+		{"Submarine Scout",    5},
+		{"Submarine Attack",   6},
+		{"Coal Mine Collapse", 7},
+	};
+	auto dit = DISASTER_ITEMS.find(item.item_name);
+	if (dit != DISASTER_ITEMS.end()) {
+		if (!is_replay) {
+			/* Post as a DoCommand so the disaster vehicle is spawned on ALL
+			 * machines in the same tick, preventing MP desyncs. */
+			Command<CMD_AP_TRIGGER_DISASTER>::Post(dit->second);
+			/* Disaster news is generated by the vanilla disaster vehicle handlers */
+		}
 		return;
 	}
 
@@ -1394,8 +1658,21 @@ static void AP_OnDisconnected(const std::string &reason)
 static void AP_OnPrint(const std::string &msg, APPrintColour colour)
 {
 	Debug(misc, 0, "[AP] Server: {}", msg);
+	const TextColour tc = AP_ToConsoleColour(colour);
+	IConsolePrint(tc, "AP: " + msg);
+	AP_PushToConsole(msg, tc);
 
-	AP_ShowNews(msg, colour);
+	/* Goal completions get a full newspaper popup — everything else is console-only */
+	if (_game_mode == GM_NORMAL &&
+	    (msg.find("has reached their goal") != std::string::npos ||
+	     msg.find("has completed their goal") != std::string::npos)) {
+		AddNewsItem(
+			GetEncodedString(STR_ARCHIPELAGO_NEWS, msg),
+			NewsType::ArrivalOther,
+			NewsStyle::Normal,
+			{}
+		);
+	}
 }
 
 /* -------------------------------------------------------------------------
@@ -1546,6 +1823,7 @@ uint32_t AP_GetWorldSeed()
 
 void AP_ShowConsole(const std::string &msg)
 {
+	AP_PushToConsole(msg, CC_INFO);
 	IConsolePrint(CC_INFO, msg);
 }
 
@@ -1686,7 +1964,7 @@ static void CheckMissions()
 			m.completed = true;
 			completed_this_pass++;
 			AP_SendCheckByName(m.location);
-			AP_ShowNews("Mission complete: " + m.description);
+			AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_MISSION_COMPLETE, m.description), APPrintColour::DEFAULT, NewsType::General, NewsStyle::Normal);
 			Debug(misc, 0, "[AP] Mission completed: {} ({})", m.location, m.description);
 		}
 	}
@@ -1729,6 +2007,60 @@ void AP_OnLeaveGame()
 	}
 	_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
 }
+
+/* ── Timed effect helpers ─────────────────────────────────────────────── */
+
+/** Returns the current economy time as a flat month counter (year*12 + month).
+ *  Forward-declared here so AP_OnItemReceived (defined earlier) can call it. */
+static int64_t AP_FlatEconMonth()
+{
+	return (int64_t)TimerGameEconomy::year.base() * 12 + (int64_t)TimerGameEconomy::month;
+}
+
+/** Monthly timer — reverts any timed AP trap/filler effects that have expired. */
+static const IntervalTimer<TimerGameEconomy> _ap_timed_effects_monthly(
+	{TimerGameEconomy::MONTH, TimerGameEconomy::Priority::NONE},
+	[](auto) {
+		if (!_ap_session_started || !_ap_is_primary) return;
+		const int64_t now = AP_FlatEconMonth();
+
+		/* High Demand Period / Recession — restore payment multiplier */
+		if (_ap_high_demand_expiry >= 0 && now >= _ap_high_demand_expiry) {
+			Command<CMD_AP_SET_PAYMENT_MULT>::Post(100);
+			_ap_high_demand_expiry = -1;
+		}
+		if (_ap_recession_expiry >= 0 && now >= _ap_recession_expiry) {
+			Command<CMD_AP_SET_PAYMENT_MULT>::Post(100);
+			_ap_recession_expiry = -1;
+		}
+
+		/* Industry Strike — restore saved production level */
+		if (_ap_industry_strike_expiry >= 0 && now >= _ap_industry_strike_expiry) {
+			Industry *ind = Industry::GetIfValid(_ap_industry_strike_id);
+			if (ind != nullptr) {
+				Command<CMD_INDUSTRY_SET_PRODUCTION>::Post(_ap_industry_strike_id,
+					_ap_industry_strike_saved_level, false, EncodedString{});
+			}
+			_ap_industry_strike_expiry = -1;
+			_ap_industry_strike_id     = IndustryID::Invalid();
+		}
+
+		/* Labour Strike — restart all vehicles */
+		if (_ap_labour_strike_expiry >= 0 && now >= _ap_labour_strike_expiry) {
+			for (VehicleType vt : {VEH_TRAIN, VEH_ROAD, VEH_SHIP, VEH_AIRCRAFT}) {
+				Command<CMD_MASS_START_STOP>::Post(TileIndex{}, true, true,
+					VehicleListIdentifier(VL_STANDARD, vt, _local_company));
+			}
+			_ap_labour_strike_expiry = -1;
+		}
+
+		/* Reliability Crisis — restore saved setting */
+		if (_ap_breakdowns_expiry >= 0 && now >= _ap_breakdowns_expiry) {
+			Command<CMD_CHANGE_SETTING>::Post("difficulty.vehicle_breakdowns",
+				(int32_t)_ap_breakdowns_saved_setting);
+			_ap_breakdowns_expiry = -1;
+		}
+	});
 
 static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 	{ std::chrono::milliseconds(250), TimerGameRealtime::ALWAYS },
@@ -1843,7 +2175,7 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 					if (!_ap_engine_map_built) BuildEngineMap();
 					if (AP_UnlockEngineByName(sv)) {
 						AP_OK("Starting vehicle unlocked: " + sv);
-						AP_ShowNews("Starting vehicle: " + sv);
+						AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SESSION_VEHICLE, sv));
 					} else {
 						/* Engine not found — try rebuilding the map once (covers edge
 						 * cases where the map was built before all NewGRFs finished
@@ -1853,7 +2185,7 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 						BuildEngineMap();
 						if (AP_UnlockEngineByName(sv)) {
 							AP_OK("Starting vehicle unlocked after map rebuild: " + sv);
-							AP_ShowNews("Starting vehicle: " + sv);
+							AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SESSION_VEHICLE, sv));
 						} else {
 							AP_ERR("Starting vehicle '" + sv + "' not found in engine map!");
 						}
@@ -1867,7 +2199,7 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 				const Money bonus_amount = c->current_loan;
 				if (bonus_amount > 0) {
 					Command<CMD_AP_MONEY>::Post(bonus_amount);
-					AP_ShowNews("Starting bonus: +" + AP_FormatLocalCurrency(bonus_amount) + " (one loan).");
+					AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SESSION_BONUS, (uint64_t)bonus_amount));
 					AP_OK("Starting cash bonus applied: +" + AP_FormatLocalCurrency(bonus_amount) + " (one loan)");
 				}
 			}
@@ -1885,7 +2217,7 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 					_ap_unlocked_cargo_types[ct] = true;
 					Command<CMD_AP_SET_CARGO_UNLOCK>::Post(cid, (uint8_t)ct, true);
 					AP_ApplyCargoWagonUnlocks(cid);
-					AP_ShowNews("Starting cargo unlocked: " + std::string(CARGO_NAMES[_ap_pending_sd.starting_cargo_type]));
+					AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_SESSION_CARGO, std::string_view{CARGO_NAMES[_ap_pending_sd.starting_cargo_type]}));
 					AP_OK("Starting cargo type unlocked: " + std::string(CARGO_NAMES[_ap_pending_sd.starting_cargo_type]));
 					SetWindowClassesDirty(WC_ARCHIPELAGO);
 					_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
@@ -2015,7 +2347,7 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 				_ap_client->SendGoal();
 				Debug(misc, 0, "[AP] Win condition reached! Goal sent.");
 				AP_OK("*** WIN CONDITION REACHED! Goal sent to server! ***");
-				AP_ShowNews("WIN CONDITION REACHED! Goal sent to server!");
+				AP_ShowNews(GetString(STR_ARCHIPELAGO_NEWS_WIN_CONDITION));
 				/* Show vanilla endgame screen immediately for the local slot that
 				 * actually reached its AP goal. In multiplayer this stays instance-
 				 * local because CheckWinCondition() uses each client's own AP state. */

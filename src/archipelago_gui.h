@@ -9,16 +9,24 @@
 #define ARCHIPELAGO_GUI_H
 
 #include "archipelago.h"
+#include "gfx_type.h"
 #include <string>
 #include <cstdint>
 #include <atomic>
+#include <deque>
 #include <map>
+
+struct APConsoleEntry {
+	std::string text;
+	TextColour  colour;
+};
 
 void ShowArchipelagoConnectWindow();
 void ShowArchipelagoStatusWindow();
 void ShowArchipelagoMissionsWindow();
 void ShowArchipelagoInventoryWindow();
 void ShowArchipelagoShopWindow();
+void ShowArchipelagoConsoleWindow();
 void AP_ShowConsole(const std::string &msg);
 
 extern std::string _ap_last_host;
@@ -28,6 +36,11 @@ extern std::string _ap_last_pass;
 extern bool        _ap_last_ssl;
 
 extern std::atomic<uint32_t> _ap_status_generation;
+extern std::atomic<uint32_t> _ap_console_generation;
+
+/* AP console log — ring buffer of messages pushed by AP_ShowNews and AP_OnPrint */
+const std::deque<APConsoleEntry> &AP_GetConsoleLog();
+void AP_SendConsoleInput(const std::string &text);
 
 /* Accessor functions from manager */
 const APSlotData &AP_GetSlotData();

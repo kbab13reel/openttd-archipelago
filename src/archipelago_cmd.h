@@ -15,6 +15,7 @@
 #include "cargotype.h"
 #include "economy_type.h"
 #include "engine_type.h"
+#include "town_type.h"
 
 CommandCost CmdAPSetCargoUnlock(DoCommandFlags flags, CompanyID company, uint8_t cargo_type, bool unlocked);
 CommandCost CmdAPMoney(DoCommandFlags flags, Money amount);
@@ -44,5 +45,15 @@ DEF_CMD_TRAIT(CMD_AP_SET_COMPANY_AP_ACTIVE, CmdAPSetCompanyAPActive, {}, Command
 DEF_CMD_TRAIT(CMD_AP_SET_ENGINE_UNLOCK, CmdAPSetEngineUnlock, {}, CommandType::ServerSetting)
 DEF_CMD_TRAIT(CMD_AP_SET_AIRPORT_TIER, CmdAPSetAirportTier, {}, CommandType::OtherManagement)
 DEF_CMD_TRAIT(CMD_AP_SET_UTILITY_UNLOCK, CmdAPSetUtilityUnlock, {}, CommandType::ServerSetting)
+
+CommandCost CmdAPCompanyScandal(DoCommandFlags flags, CompanyID company);
+CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company);
+CommandCost CmdAPSetPaymentMult(DoCommandFlags flags, int32_t multiplier_pct);
+CommandCost CmdAPTriggerDisaster(DoCommandFlags flags, uint8_t disaster_index);
+
+DEF_CMD_TRAIT(CMD_AP_COMPANY_SCANDAL,  CmdAPCompanyScandal,  CommandFlag::NoEst, CommandType::ServerSetting)
+DEF_CMD_TRAIT(CMD_AP_WILDFIRE,         CmdAPWildfire,         CommandFlag::NoEst, CommandType::ServerSetting)
+DEF_CMD_TRAIT(CMD_AP_SET_PAYMENT_MULT, CmdAPSetPaymentMult,   CommandFlag::NoEst, CommandType::ServerSetting)
+DEF_CMD_TRAIT(CMD_AP_TRIGGER_DISASTER, CmdAPTriggerDisaster,  CommandFlag::NoEst, CommandType::ServerSetting)
 
 #endif /* ARCHIPELAGO_CMD_H */

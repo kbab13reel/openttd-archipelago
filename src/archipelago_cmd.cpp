@@ -21,6 +21,14 @@
 #include "rail.h"
 #include "road_func.h"
 #include "settings_type.h"
+#include "town.h"
+#include "tile_map.h"
+#include "clear_map.h"
+#include "station_base.h"
+#include "map_func.h"
+#include "tilearea_type.h"
+#include "viewport_func.h"
+#include "disaster_vehicle.h"
 
 #include "safeguards.h"
 
@@ -347,4 +355,89 @@ void AP_SetCompanyEngineUnlockStr(uint8_t idx, const std::string &s)
 		p = next;
 		if (p < end && *p == ',') ++p;
 	}
+}
+
+/* ---- Trap / filler effect commands --------------------------------------- */
+
+/** extern for the global payment multiplier defined in economy.cpp */
+extern int _ap_payment_multiplier_pct;
+
+/**
+ * AP trap: set all town authority ratings for a company to the minimum.
+ * @param flags  Command execution flags.
+ * @param company  Company whose ratings are trashed.
+ */
+CommandCost CmdAPCompanyScandal(DoCommandFlags flags, CompanyID company)
+{
+	if (!Company::IsValidID(company)) return CommandCost();
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		for (Town *t : Town::Iterate()) {
+			t->ratings[company] = RATING_MINIMUM;
+			t->have_ratings.Set(company);
+		}
+	}
+	return CommandCost();
+}
+
+/**
+ * AP trap: clear trees within ~20 tiles of every station owned by a company.
+ * @param flags    Command execution flags.
+ * @param company  The company whose station areas are scorched.
+ */
+CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company)
+{
+	if (!Company::IsValidID(company)) return CommandCost();
+
+	if (flags.Test(DoCommandFlag::Execute)) {
+		static constexpr int WILDFIRE_RADIUS = 20;
+		for (const Station *st : Station::Iterate()) {
+			if (st->owner != company) continue;
+			/* Expand a bounding box around this station and clear any tree tiles. */
+			TileIndex centre = st->xy;
+			int cx = (int)TileX(centre);
+			int cy = (int)TileY(centre);
+			int x0 = std::max(0, cx - WILDFIRE_RADIUS);
+			int y0 = std::max(0, cy - WILDFIRE_RADIUS);
+			int x1 = std::min((int)Map::MaxX(), cx + WILDFIRE_RADIUS);
+			int y1 = std::min((int)Map::MaxY(), cy + WILDFIRE_RADIUS);
+			for (int y = y0; y <= y1; y++) {
+				for (int x = x0; x <= x1; x++) {
+					TileIndex tile = TileXY(x, y);
+					if (IsTileType(tile, MP_TREES)) {
+						MakeClear(tile, CLEAR_GRASS, 0);
+						MarkTileDirtyByTile(tile);
+					}
+				}
+			}
+		}
+	}
+	return CommandCost();
+}
+
+/**
+ * AP effect: set the global cargo payment multiplier (High Demand Period / Recession).
+ * @param flags           Command execution flags.
+ * @param multiplier_pct  New multiplier in percent (100 = normal, 150 = +50%, 70 = recession).
+ */
+CommandCost CmdAPSetPaymentMult(DoCommandFlags flags, int32_t multiplier_pct)
+{
+	if (flags.Test(DoCommandFlag::Execute)) {
+		_ap_payment_multiplier_pct = multiplier_pct;
+	}
+	return CommandCost();
+}
+
+/**
+ * AP trap: trigger a specific disaster by index, synchronized across all MP machines.
+ * @param flags           Command execution flags.
+ * @param disaster_index  Index into _disasters[] (0=Zeppelin, 1=Small UFO, 2=Airplane,
+ *                        3=Helicopter, 4=Big UFO, 5=Small Sub, 6=Big Sub, 7=Coal Mine).
+ */
+CommandCost CmdAPTriggerDisaster(DoCommandFlags flags, uint8_t disaster_index)
+{
+	if (flags.Test(DoCommandFlag::Execute)) {
+		AP_TriggerDisaster(disaster_index);
+	}
+	return CommandCost();
 }

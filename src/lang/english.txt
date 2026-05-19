@@ -2283,6 +2283,35 @@ STR_ARCHIPELAGO_NEWS                                            :{RAW_STRING}
 STR_ARCHIPELAGO_INVENTORY_CAPTION                               :Archipelago - Inventory
 STR_ARCHIPELAGO_BTN_INVENTORY                                   :{BLACK}Inventory
 STR_ARCHIPELAGO_SHOP_CAPTION                                    :Archipelago - Shop
+STR_ARCHIPELAGO_CONSOLE_CAPTION                                 :Archipelago - AP Console
+STR_ARCHIPELAGO_BTN_CONSOLE                                     :{BLACK}AP Console
+STR_ARCHIPELAGO_CONSOLE_SEND                                    :{BLACK}Send
+STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_HONOURS                      :{BIG_FONT}{BLACK}Civic Honours Awarded!
+STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_NEW_CEO                      :{BIG_FONT}{BLACK}New Leadership Appointed!
+STR_ARCHIPELAGO_COMPANY_NEWS_TITLE_SCANDAL                      :{BIG_FONT}{BLACK}Company Scandal!
+STR_ARCHIPELAGO_NEWS_SESSION_VEHICLE                            :Deployment! Your company has been assigned a fleet of {RAW_STRING} to begin operations.
+STR_ARCHIPELAGO_NEWS_SESSION_BONUS                              :Grant Received! An initial capital injection of {CURRENCY_LONG} has been deposited into company accounts.
+STR_ARCHIPELAGO_NEWS_SESSION_CARGO                              :First Contract! Your company is now licensed to transport {RAW_STRING}.
+STR_ARCHIPELAGO_NEWS_VEHICLE_UNLOCK                             :New Vehicles! {RAW_STRING} is now available for purchase.
+STR_ARCHIPELAGO_NEWS_INFRA_UNLOCK                               :Approved! {RAW_STRING} are now available for construction.
+STR_ARCHIPELAGO_NEWS_CARGO_UNLOCK                               :New Contract! Your company is now licensed to transport {RAW_STRING}.
+STR_ARCHIPELAGO_NEWS_SHOP_EXPANDED                              :Shop Updated! {NUM} of {NUM} items are now available for purchase.
+STR_ARCHIPELAGO_NEWS_COLOUR_UNLOCK                              :New Livery! {RAW_STRING} has been added to your company's colour options.
+STR_ARCHIPELAGO_NEWS_CASH_BONUS                                 :Windfall! A cash injection of {CURRENCY_LONG} has been received.
+STR_ARCHIPELAGO_NEWS_CHOO_CHOO                                  :Special Delivery! An anonymous benefactor has sent their warm regards.
+STR_ARCHIPELAGO_NEWS_CIVIC_HONOURS                              :The towns your company serves have honoured your contribution with a statue.
+STR_ARCHIPELAGO_NEWS_HIGH_DEMAND                                :Boom! Freight demand is at an all-time high - payment rates are up {NUM}% for the next {NUM} months.
+STR_ARCHIPELAGO_NEWS_SURGE_PRODUCTION                           :Full Output! A local industry has hit peak capacity - now is the time to capitalise.
+STR_ARCHIPELAGO_NEWS_NEW_CEO                                    :Fresh leadership has taken the helm of the company.
+STR_ARCHIPELAGO_NEWS_RECESSION                                  :Downturn! A recession has taken hold - cargo payment rates have dropped to {NUM}% for the next {NUM} months.
+STR_ARCHIPELAGO_NEWS_INDUSTRY_STRIKE                            :Strike! Workers at a local industry have walked out - production has ceased for {NUM} months.
+STR_ARCHIPELAGO_NEWS_LABOUR_STRIKE                              :Union Action! The transport workers' union has grounded the entire fleet for {NUM} months. Vehicles can be restarted manually.
+STR_ARCHIPELAGO_NEWS_RELIABILITY_CRISIS                         :Fleet Alert! A maintenance backlog has put the fleet at risk - expect breakdowns for the next {NUM} months.
+STR_ARCHIPELAGO_NEWS_COMPANY_SCANDAL                            :Damaging revelations have collapsed public trust in every town your company serves.
+STR_ARCHIPELAGO_NEWS_WILDFIRE                                   :Wildfire! Blazes have broken out near your stations, destroying surrounding vegetation.
+STR_ARCHIPELAGO_NEWS_MISSION_COMPLETE                           :Complete! {RAW_STRING}
+STR_ARCHIPELAGO_NEWS_SHOP_PURCHASE                              :Acquired! {RAW_STRING} has been purchased for {CURRENCY_LONG}.
+STR_ARCHIPELAGO_NEWS_WIN_CONDITION                              :Victory! All objectives completed - your result has been reported to the Archipelago server.
 STR_AP_ERROR_LOCKED_INFRASTRUCTURE                              :[AP] Infrastructure locked - find the Archipelago item to unlock it!
 
 STR_INTRO_BASESET                                               :{BLACK}The currently selected base graphics set is missing {NUM} sprite{P "" s}. Please check for updates for the baseset.

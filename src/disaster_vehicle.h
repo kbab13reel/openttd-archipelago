@@ -52,4 +52,11 @@ struct DisasterVehicle final : public SpecializedVehicle<DisasterVehicle, VEH_DI
 	bool Tick() override;
 };
 
+/**
+ * Trigger a specific disaster by index (0=Zeppelin, 1=Small UFO, 2=Airplane,
+ * 3=Helicopter, 4=Big UFO, 5=Small Sub, 6=Big Sub, 7=Coal Mine).
+ * Used by the Archipelago trap system.
+ */
+void AP_TriggerDisaster(uint8_t index);
+
 #endif /* DISASTER_VEHICLE_H */

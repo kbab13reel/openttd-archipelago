@@ -101,7 +101,14 @@ struct APSlotData {
 	bool                    lock_tunnels         = false;
 	bool                    lock_canals          = false;
 	bool                    lock_terraforming    = false;
-
+	/* ── Trap / filler durations ─────────────────────────────────────── */
+	int                     recession_months          = 3;   ///< months Recession lasts
+	int                     recession_multiplier_pct  = 70;  ///< Recession payment multiplier (70 = cut to 70%)
+	int                     industry_strike_months    = 3;   ///< months Industry Strike lasts
+	int                     labour_strike_months      = 3;   ///< months Labour Strike lasts
+	int                     reliability_crisis_months = 3;   ///< months Reliability Crisis lasts
+	int                     high_demand_months        = 6;   ///< months High Demand Period lasts
+	int                     high_demand_multiplier_pct = 150; ///< High Demand Period payment multiplier (150 = +50%)
 	/* ── New apworld (v0.1.0+) ──────────────────────────────────────── */
 	int                     starting_cargo_type  = 0;   ///< 0=any, 1=Passengers, 2=Mail, 3=Coal, 4=Oil, 5=Livestock, 6=Grain, 7=Wood, 8=IronOre, 9=Valuables (matches Python StartingCargoType; Goods/Steel excluded)
 
