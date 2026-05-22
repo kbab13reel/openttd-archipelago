@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 from Options import (
     Choice, Range, Toggle, PerGameCommonOptions,
-    OptionGroup, ItemDict
+    OptionGroup, OptionCounter
 )
-from .items import FILLER_ITEMS, TRAP_ITEMS
+from .items import FILLER_DEFAULT_WEIGHTS, TRAP_DEFAULT_WEIGHTS
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -258,12 +258,11 @@ class RevealShopItems(Toggle):
 #  FILLERS AND TRAPS
 # ═══════════════════════════════════════════════════════════════
 
-class FillerWeights(ItemDict):
+class FillerWeights(OptionCounter):
     """Controls how often each filler item appears in the item pool.
     Increase a value to make that filler more common, set to 0 to disable it."""
     display_name = "Filler Weights"
-    valid_keys = list(FILLER_ITEMS)
-    default = {k: 10 for k in FILLER_ITEMS}
+    default = dict(FILLER_DEFAULT_WEIGHTS)
 
 class HighDemandMonths(Range):
     """How many in-game months a High Demand Period lasts."""
@@ -286,15 +285,14 @@ class TrapFrequency(Range):
     display_name = "Trap Frequency"
     range_start = 0
     range_end = 100
-    default = 0
+    default = 10
 
 
-class TrapWeights(ItemDict):
+class TrapWeights(OptionCounter):
     """Controls how often each trap item appears when a filler slot is selected for a trap.
     Increase a value to make that trap more common, set to 0 to disable it."""
     display_name = "Trap Weights"
-    valid_keys = list(TRAP_ITEMS)
-    default = {k: 10 for k in TRAP_ITEMS}
+    default = dict(TRAP_DEFAULT_WEIGHTS)
 
 
 class RecessionMonths(Range):
@@ -322,17 +320,9 @@ class IndustryStrikeMonths(Range):
     default = 3
 
 
-class LabourStrikeMonths(Range):
-    """How many in-game months a Labour Strike lasts. Vehicles can be restarted manually at any time; the duration only controls the automatic recovery."""
-    display_name = "Labour Strike Duration (Months)"
-    range_start = 1
-    range_end = 24
-    default = 3
-
-
 class ReliabilityCrisisMonths(Range):
-    """How many in-game months a Reliability Crisis lasts before breakdowns return to normal."""
-    display_name = "Reliability Crisis Duration (Months)"
+    """How many in-game months a Breakdown Crisis lasts before breakdowns return to normal."""
+    display_name = "Breakdown Crisis Duration (Months)"
     range_start = 1
     range_end = 24
     default = 3
@@ -536,7 +526,6 @@ class OpenTTDOptions(PerGameCommonOptions):
     recession_months:                RecessionMonths
     recession_multiplier_pct:        RecessionMultiplierPct
     industry_strike_months:          IndustryStrikeMonths
-    labour_strike_months:            LabourStrikeMonths
     reliability_crisis_months:       ReliabilityCrisisMonths
     high_demand_months:              HighDemandMonths
     high_demand_multiplier_pct:      HighDemandMultiplierPct
@@ -600,7 +589,6 @@ openttd_option_groups = [
         RecessionMonths,
         RecessionMultiplierPct,
         IndustryStrikeMonths,
-        LabourStrikeMonths,
         ReliabilityCrisisMonths,
         HighDemandMonths,
         HighDemandMultiplierPct,

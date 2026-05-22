@@ -90,24 +90,40 @@ class OpenTTDWorld(World):
             for item_name, item_id in self.item_name_to_id.items()
         }
 
+        # Provide canonical item classifications so the C++ client can avoid
+        # maintaining separate hardcoded filler/trap name lists.
+        item_name_to_classification: dict[str, str] = {}
+        for item_name, cls in items.DEFAULT_ITEM_CLASSIFICATION.items():
+            if cls & ItemClassification.trap:
+                item_name_to_classification[item_name] = "trap"
+            elif cls & ItemClassification.filler:
+                item_name_to_classification[item_name] = "filler"
+            elif cls & ItemClassification.progression:
+                item_name_to_classification[item_name] = "progression"
+            elif cls & ItemClassification.useful:
+                item_name_to_classification[item_name] = "useful"
+            else:
+                item_name_to_classification[item_name] = "unknown"
+
         location_name_to_id = locations.get_slot_location_name_to_id(self)
 
         shop_locations = locations.get_slot_shop_locations(self)
         reveal_shop_items = bool(self.options.reveal_shop_items.value)
-        if reveal_shop_items:
-            for shop in shop_locations:
-                location_name = shop.get("location")
-                if not isinstance(location_name, str):
-                    continue
-                location = self.multiworld.get_location(location_name, self.player)
-                if location.item is not None:
-                    item_name = location.item.name
-                    recipient = self.multiworld.player_name[location.item.player]
-                    shop["name"] = f"{item_name} ({recipient})"
+        for shop in shop_locations:
+            location_name = shop.get("location")
+            if not isinstance(location_name, str):
+                continue
+            location = self.multiworld.get_location(location_name, self.player)
+            if location.item is not None and reveal_shop_items:
+                item_name = location.item.name
+                recipient = self.multiworld.player_name[location.item.player]
+                shop["name"] = f"{item_name} ({recipient})"
+                shop["classification"] = location.item.classification.name
         shop_tiers = locations.get_shop_tier_count(self)
 
         return {
             "item_id_to_name": item_id_to_name,
+            "item_name_to_classification": item_name_to_classification,
             "location_name_to_id": location_name_to_id,
             "mission_count": len(locations.MISSION_DEFINITIONS),
             "missions": locations.get_slot_missions(self),
@@ -157,7 +173,6 @@ class OpenTTDWorld(World):
             "recession_months":           self.options.recession_months.value,
             "recession_multiplier_pct":    self.options.recession_multiplier_pct.value,
             "industry_strike_months":     self.options.industry_strike_months.value,
-            "labour_strike_months":       self.options.labour_strike_months.value,
             "reliability_crisis_months":  self.options.reliability_crisis_months.value,
             "high_demand_months":         self.options.high_demand_months.value,
             "high_demand_multiplier_pct": self.options.high_demand_multiplier_pct.value,

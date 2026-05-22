@@ -24,6 +24,7 @@ enum Colours : uint8_t;
 
 #include "company_type.h"
 #include "engine_type.h"
+#include "station_type.h"
 #include "vehicle_type.h"
 
 /** Connection states for the Archipelago client. */
@@ -61,6 +62,7 @@ struct APShopLocation {
 	std::string location;
 	std::string name;
 	int64_t     cost = 0;
+	std::string classification; ///< AP item classification: "filler", "useful", "progression", "trap"
 };
 
 /** Full configuration received from the AP server after authentication. */
@@ -105,8 +107,7 @@ struct APSlotData {
 	int                     recession_months          = 3;   ///< months Recession lasts
 	int                     recession_multiplier_pct  = 70;  ///< Recession payment multiplier (70 = cut to 70%)
 	int                     industry_strike_months    = 3;   ///< months Industry Strike lasts
-	int                     labour_strike_months      = 3;   ///< months Labour Strike lasts
-	int                     reliability_crisis_months = 3;   ///< months Reliability Crisis lasts
+	int                     reliability_crisis_months = 3;   ///< months Breakdown Crisis lasts
 	int                     high_demand_months        = 6;   ///< months High Demand Period lasts
 	int                     high_demand_multiplier_pct = 150; ///< High Demand Period payment multiplier (150 = +50%)
 	/* ── New apworld (v0.1.0+) ──────────────────────────────────────── */
@@ -114,6 +115,8 @@ struct APSlotData {
 
 	/** Maps item_id -> item_name, sent in slot_data by APWorld. */
 	std::map<int64_t, std::string> item_id_to_name;
+	/** Maps item_name -> classification string (filler/trap/progression/useful), sent in slot_data by APWorld. */
+	std::map<std::string, std::string> item_name_to_classification;
 	/** Maps location_name -> location_id, sent in slot_data by APWorld. */
 	std::map<std::string, int64_t> location_name_to_id;
 	/** Location IDs already checked for this slot, sent by AP server on connect. */
@@ -150,7 +153,7 @@ struct APCallbacks {
 	std::function<void()>                    on_connected;
 	std::function<void(const std::string &)> on_disconnected;
 	std::function<void(const APItem &)>      on_item_received;
-	std::function<void(const std::string &, APPrintColour)> on_print;
+	std::function<void(const std::string &, const std::string &, APPrintColour)> on_print;
 	std::function<void(const APSlotData &)>  on_slot_data;
 	/** Fired when RoomUpdate brings new checked_locations (e.g. from a co-client). */
 	std::function<void()> on_locations_updated;
@@ -205,6 +208,12 @@ public:
 	void    ResetReceivedItemsIndex()     { items_received_index.store(0); }
 	void    SetReceivedItemsIndex(int64_t v) { items_received_index.store(v); }
 
+	/** Return a copy of the player name map (slot_id -> alias). Thread-safe. */
+	std::map<int64_t, std::string> GetPlayerNames() const {
+		std::lock_guard<std::mutex> lg(slot_mutex);
+		return player_id_to_name;
+	}
+
 	APCallbacks callbacks;
 
 private:
@@ -226,6 +235,9 @@ private:
 	std::map<int64_t, std::string> player_id_to_name;   ///< Slot number → player alias
 	std::map<int64_t, std::string> player_id_to_game;   ///< Slot number → game name
 	std::map<int64_t, std::string> location_id_to_hint; ///< location_id → "player (game)" label
+	/* Per-game id → name maps, populated from DataPackage. Worker-thread only (no lock needed). */
+	std::map<std::string, std::map<int64_t, std::string>> game_item_id_to_name;
+	std::map<std::string, std::map<int64_t, std::string>> game_location_id_to_name;
 
 	std::thread        worker_thread;
 	std::atomic<bool>  stop_requested{ false };
@@ -233,7 +245,8 @@ private:
 
 	struct InboundEvent {
 		enum Type : uint8_t { CONNECTED, DISCONNECTED, ITEM, PRINT, SLOT_DATA, LOCATIONS_UPDATED } type;
-		std::string text;
+		std::string text;          ///< Plain text (for IConsolePrint)
+		std::string colored_text;  ///< SCC-encoded text with per-part colours (for AP console window)
 		APPrintColour colour = APPrintColour::DEFAULT;
 		APItem      item;
 		APSlotData  slot;
@@ -279,7 +292,7 @@ bool AP_IsTerraformingUnlocked();
 bool AP_IsCompanyCargoUnlocked(CompanyID company, uint8_t cargo_type);
 /** Reset per-company cargo unlock state (called at AP session start). */
 void AP_ResetCompanyCargoUnlocks(CompanyID company);
-void AP_RecordCargoDelivery(CompanyID cid, VehicleType vtype, CargoType ct, uint32_t amount);
+void AP_RecordCargoDelivery(CompanyID cid, VehicleType vtype, CargoType ct, uint32_t amount, StationID sid);
 
 /** Per-company AP-active flag — true if this company has AP restrictions (synchronized). */
 bool AP_IsCompanyAPActive(CompanyID company);

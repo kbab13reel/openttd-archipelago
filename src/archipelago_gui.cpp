@@ -8,6 +8,7 @@
 #include "stdafx.h"
 #include "core/format.hpp"
 #include "core/string_consumer.hpp"
+#include "core/utf8.hpp"
 #include "archipelago.h"
 #include "archipelago_gui.h"
 #include "company_func.h"
@@ -15,6 +16,7 @@
 #include "window_gui.h"
 #include "window_func.h"
 #include "gfx_func.h"
+#include "palette_func.h"
 #include "strings_func.h"
 #include "viewport_func.h"
 #include "querystring_gui.h"
@@ -430,6 +432,7 @@ static void ShowArchipelagoInGameConnectWindow()
 enum APStatusWidgets : WidgetID {
 	WAPST_STATUS_LINE,
 	WAPST_GOAL_LINE,
+	WAPST_EFFECTS_LINE,
 	WAPST_BTN_MISSIONS,
 	WAPST_BTN_INVENTORY,
 	WAPST_BTN_SHOP,
@@ -447,30 +450,41 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ap_status_widgets = 
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetResize(1, 1),
 		NWidget(NWID_VERTICAL), SetPIP(2, 2, 2), SetPadding(4),
-			NWidget(WWT_TEXT, INVALID_COLOUR, WAPST_STATUS_LINE), SetMinimalSize(276, 12), SetFill(1, 0), SetStringTip(STR_EMPTY),
-			NWidget(WWT_TEXT, INVALID_COLOUR, WAPST_GOAL_LINE),   SetMinimalSize(276, 12), SetFill(1, 0), SetStringTip(STR_EMPTY),
+			NWidget(WWT_TEXT, INVALID_COLOUR, WAPST_STATUS_LINE),  SetMinimalSize(200, 12), SetFill(1, 0), SetStringTip(STR_EMPTY),
+			NWidget(WWT_TEXT, INVALID_COLOUR, WAPST_GOAL_LINE),    SetMinimalSize(200, 12), SetFill(1, 0), SetStringTip(STR_EMPTY),
+			NWidget(WWT_EMPTY, INVALID_COLOUR, WAPST_EFFECTS_LINE), SetMinimalSize(200, 0), SetFill(1, 0),
 			NWidget(NWID_HORIZONTAL), SetPIP(0, 3, 0),
-				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_INVENTORY),  SetStringTip(STR_ARCHIPELAGO_BTN_INVENTORY),  SetMinimalSize(58, 14),
-				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_SHOP),       SetStringTip(STR_ARCHIPELAGO_BTN_SHOP),       SetMinimalSize(58, 14),
-				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_MISSIONS),   SetStringTip(STR_ARCHIPELAGO_BTN_MISSIONS),   SetMinimalSize(58, 14),
+				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_INVENTORY),  SetStringTip(STR_ARCHIPELAGO_BTN_INVENTORY),  SetMinimalSize(58, 14), SetFill(1, 0),
+				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_SHOP),       SetStringTip(STR_ARCHIPELAGO_BTN_SHOP),       SetMinimalSize(58, 14), SetFill(1, 0),
+				NWidget(WWT_PUSHTXTBTN, COLOUR_YELLOW, WAPST_BTN_MISSIONS),   SetStringTip(STR_ARCHIPELAGO_BTN_MISSIONS),   SetMinimalSize(58, 14), SetFill(1, 0),
+			EndContainer(),
+			NWidget(NWID_HORIZONTAL), SetPIP(0, 3, 0),
+				NWidget(WWT_PUSHTXTBTN, COLOUR_MAUVE, WAPST_BTN_CONSOLE), SetStringTip(STR_ARCHIPELAGO_BTN_CONSOLE), SetMinimalSize(46, 14), SetFill(1, 0),
 				NWidget(NWID_SELECTION, INVALID_COLOUR, WAPST_SEL_SETTINGS),
-					NWidget(WWT_PUSHTXTBTN, COLOUR_GREEN, WAPST_BTN_SETTINGS_CONNECTED), SetStringTip(STR_EMPTY), SetMinimalSize(74, 14),
-					NWidget(WWT_PUSHTXTBTN, COLOUR_RED,   WAPST_BTN_SETTINGS_DISCONNECTED), SetStringTip(STR_EMPTY), SetMinimalSize(74, 14),
+					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WAPST_BTN_SETTINGS_CONNECTED), SetStringTip(STR_EMPTY), SetMinimalSize(74, 14), SetFill(1, 0),
+					NWidget(WWT_PUSHTXTBTN, COLOUR_GREY, WAPST_BTN_SETTINGS_DISCONNECTED), SetStringTip(STR_EMPTY), SetMinimalSize(74, 14), SetFill(1, 0),
 				EndContainer(),
 			EndContainer(),
-			NWidget(WWT_PUSHTXTBTN, COLOUR_DARK_BLUE, WAPST_BTN_CONSOLE), SetStringTip(STR_ARCHIPELAGO_BTN_CONSOLE), SetMinimalSize(60, 14), SetFill(1, 0),
 		EndContainer(),
 	EndContainer(),
 };
 
 struct ArchipelagoStatusWindow : public Window {
-	APState  last_state  = APState::DISCONNECTED;
-	bool     last_has_sd = false;
-	uint32_t last_gen    = UINT32_MAX;
+	APState  last_state        = APState::DISCONNECTED;
+	bool     last_has_sd       = false;
+	uint32_t last_gen          = UINT32_MAX;
+	size_t   last_effect_count = SIZE_MAX;
 
 	ArchipelagoStatusWindow(WindowDesc &desc, WindowNumber wnum) : Window(desc) {
 		this->CreateNestedTree();
 		this->FinishInitNested(wnum);
+	}
+
+	void UpdateWidgetSize(WidgetID widget, Dimension &size, [[maybe_unused]] const Dimension &padding, [[maybe_unused]] Dimension &fill, [[maybe_unused]] Dimension &resize) override {
+		if (widget == WAPST_EFFECTS_LINE) {
+			const int n = (int)AP_GetActiveEffects().size();
+			size.height = n > 0 ? (uint)(n * GetCharacterHeight(FS_NORMAL)) : 0;
+		}
 	}
 
 	static std::string StatusLine() {
@@ -508,7 +522,14 @@ struct ArchipelagoStatusWindow : public Window {
 		bool    h = _ap_client->HasSlotData();
 		uint32_t g = _ap_status_generation.load(std::memory_order_relaxed);
 		bool     d = (g != last_gen); last_gen = g;
-		if (s != last_state || h != last_has_sd || d) {
+		const auto effects = AP_GetActiveEffects();
+		const size_t ec = effects.size();
+		if (ec != last_effect_count) {
+			last_effect_count = ec;
+			this->ReInit(); /* height of effects block changed */
+			return;
+		}
+		if (s != last_state || h != last_has_sd || d || ec > 0) {
 			last_state = s; last_has_sd = h;
 			this->SetDirty();
 		}
@@ -524,12 +545,34 @@ struct ArchipelagoStatusWindow : public Window {
 			case WAPST_GOAL_LINE:
 				DrawString(r.left, r.right, r.top, GoalLine(), TC_GOLD);
 				break;
+			case WAPST_EFFECTS_LINE: {
+				auto effects = AP_GetActiveEffects();
+				if (effects.empty()) break;
+				std::sort(effects.begin(), effects.end(), [](const APActiveEffect &a, const APActiveEffect &b) {
+					return a.months_left < b.months_left;
+				});
+				static const char *const kMonthNames[] = {
+					"Jan","Feb","Mar","Apr","May","Jun",
+					"Jul","Aug","Sep","Oct","Nov","Dec"
+				};
+				const int line_h = GetCharacterHeight(FS_NORMAL);
+				for (int i = 0; i < (int)effects.size(); i++) {
+					const auto &e = effects[i];
+					int end_year  = (int)(e.end_flat_month / 12);
+					int end_month = (int)(e.end_flat_month % 12);
+					std::string s = e.name + ": " + fmt::format("{}", e.months_left) + "m (until "
+						+ kMonthNames[end_month] + " " + fmt::format("{}", end_year) + ")";
+					DrawString(r.left, r.right, r.top + i * line_h, s, TC_ORANGE);
+				}
+				break;
+			}
 			case WAPST_BTN_SETTINGS_CONNECTED:
 			case WAPST_BTN_SETTINGS_DISCONNECTED:
 				DrawString(r.left, r.right,
 				    r.top + std::max(0, ((int)r.Height() - GetCharacterHeight(FS_NORMAL)) / 2),
 				    "AP Settings", TC_BLACK, SA_HOR_CENTER);
 				break;
+
 		}
 	}
 
@@ -599,7 +642,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ap_missions_widgets 
 	NWidget(WWT_PANEL, COLOUR_BROWN), SetResize(1, 1),
 		/* Mission list + vertical scrollbar */
 		NWidget(NWID_HORIZONTAL),
-			NWidget(WWT_PANEL, COLOUR_GREY, WAPM_LIST), SetMinimalSize(220, 120), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPM_SCROLLBAR), EndContainer(),
+			NWidget(WWT_PANEL, COLOUR_GREY, WAPM_LIST), SetMinimalSize(180, 120), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPM_SCROLLBAR), EndContainer(),
 			NWidget(NWID_VSCROLLBAR, COLOUR_BROWN, WAPM_SCROLLBAR),
 		EndContainer(),
 		/* Horizontal scrollbar + resize box */
@@ -934,7 +977,7 @@ struct ArchipelagoMissionsWindow : public Window {
 };
 
 static WindowDesc _ap_missions_desc(
-	WDP_AUTO, {"ap_missions"}, 480, 340,
+	WDP_AUTO, {"ap_missions"}, 280, 340,
 	WC_ARCHIPELAGO, WC_NONE, {},
 	_nested_ap_missions_widgets
 );
@@ -962,7 +1005,7 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ap_inventory_widgets
 	EndContainer(),
 	NWidget(WWT_PANEL, COLOUR_DARK_GREEN), SetResize(1, 1),
 		NWidget(NWID_HORIZONTAL),
-			NWidget(WWT_PANEL, COLOUR_DARK_GREEN, WAPINV_LIST), SetMinimalSize(220, 200), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPINV_SCROLLBAR), EndContainer(),
+			NWidget(WWT_PANEL, COLOUR_DARK_GREEN, WAPINV_LIST), SetMinimalSize(180, 200), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPINV_SCROLLBAR), EndContainer(),
 			NWidget(NWID_VSCROLLBAR, COLOUR_DARK_GREEN, WAPINV_SCROLLBAR),
 		EndContainer(),
 		NWidget(NWID_HORIZONTAL),
@@ -1070,18 +1113,24 @@ struct ArchipelagoInventoryWindow : public Window {
 		}
 
 		/* ── Filler ────────────────────────────────────────────── */
-		static const char * const FILLER_ITEMS[] = { "Cash Injection", "Choo chooo!" };
-		bool any_filler = false;
-		for (const char *name : FILLER_ITEMS) {
-			auto it = counts.find(name);
-			if (it != counts.end() && it->second > 0) { any_filler = true; break; }
-		}
-		if (any_filler) {
-			rows.push_back({ InventoryRow::HEADER, "— Filler —" });
-			for (const char *name : FILLER_ITEMS) {
-				auto it = counts.find(name);
-				if (it != counts.end() && it->second > 0) {
-					rows.push_back({ InventoryRow::FILLER, name, true, it->second });
+		{
+			const APSlotData &sd = AP_GetSlotData();
+			std::vector<std::pair<std::string, int>> fillers;
+			fillers.reserve(counts.size());
+			for (const auto &[name, count] : counts) {
+				if (count <= 0) continue;
+				auto cls_it = sd.item_name_to_classification.find(name);
+				if (cls_it != sd.item_name_to_classification.end() && cls_it->second == "filler") {
+					fillers.emplace_back(name, count);
+				}
+			}
+			if (!fillers.empty()) {
+				std::sort(fillers.begin(), fillers.end(), [](const auto &a, const auto &b) {
+					return a.first < b.first;
+				});
+				rows.push_back({ InventoryRow::HEADER, "— Filler —" });
+				for (const auto &[name, count] : fillers) {
+					rows.push_back({ InventoryRow::FILLER, name, true, count });
 				}
 			}
 		}
@@ -1230,7 +1279,7 @@ struct ArchipelagoInventoryWindow : public Window {
 };
 
 static WindowDesc _ap_inventory_desc(
-	WDP_AUTO, {"ap_inventory"}, 300, 360,
+	WDP_AUTO, {"ap_inventory"}, 240, 360,
 	WC_ARCHIPELAGO, WC_NONE, {},
 	_nested_ap_inventory_widgets
 );
@@ -1261,9 +1310,9 @@ static constexpr std::initializer_list<NWidgetPart> _nested_ap_shop_widgets = {
 		NWidget(WWT_STICKYBOX, COLOUR_GREY),
 	EndContainer(),
 	NWidget(NWID_VERTICAL),
-		NWidget(WWT_PANEL, COLOUR_GREY, WAPSHOP_SUMMARY), SetMinimalSize(280, 18), SetFill(1, 0), SetResize(1, 0), SetStringTip(STR_EMPTY), EndContainer(),
+		NWidget(WWT_PANEL, COLOUR_GREY, WAPSHOP_SUMMARY), SetMinimalSize(220, 18), SetFill(1, 0), SetResize(1, 0), SetStringTip(STR_EMPTY), EndContainer(),
 		NWidget(NWID_HORIZONTAL),
-			NWidget(WWT_PANEL, COLOUR_GREY, WAPSHOP_LIST), SetMinimalSize(280, 200), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPSHOP_SCROLLBAR), EndContainer(),
+			NWidget(WWT_PANEL, COLOUR_GREY, WAPSHOP_LIST), SetMinimalSize(220, 200), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPSHOP_SCROLLBAR), EndContainer(),
 			NWidget(NWID_VSCROLLBAR, COLOUR_GREY, WAPSHOP_SCROLLBAR),
 		EndContainer(),
 		NWidget(NWID_HORIZONTAL),
@@ -1405,7 +1454,21 @@ struct ArchipelagoShopWindow : public Window {
 			const std::string selection = (i == selected_row) ? ">" : " ";
 			const std::string marker = purchased ? "[X]" : "[ ]";
 			const std::string line = fmt::format("{} {} {} - {}", selection, marker, shop->name, AP_FormatMoneyCompact(shop->cost));
-			TextColour colour = purchased ? TC_DARK_GREEN : (affordable ? ((i == selected_row) ? TC_YELLOW : TC_WHITE) : TC_GREY);
+			TextColour colour;
+			if (purchased) {
+				colour = TC_DARK_GREEN;
+			} else if (i == selected_row) {
+				colour = TC_YELLOW;
+			} else if (!affordable) {
+				colour = TC_GREY;
+			} else if (shop->classification.find("progression") != std::string::npos) {
+				colour = GetColourGradient(COLOUR_PURPLE, SHADE_LIGHTEREST).ToTextColour();
+			} else if (shop->classification.find("trap") != std::string::npos) {
+				colour = GetColourGradient(COLOUR_RED, SHADE_LIGHTEREST).ToTextColour();
+			} else {
+				/* filler, useful, or unknown */
+				colour = TC_WHITE;
+			}
 			DrawString(r.left + 6, r.right - 4, y, line, colour, SA_LEFT | SA_FORCE);
 			y += rh;
 			if (y > r.bottom) break;
@@ -1455,7 +1518,7 @@ struct ArchipelagoShopWindow : public Window {
 };
 
 static WindowDesc _ap_shop_desc(
-	WDP_AUTO, {"ap_shop"}, 360, 320,
+	WDP_AUTO, {"ap_shop"}, 250, 320,
 	WC_ARCHIPELAGO, WC_NONE, {},
 	_nested_ap_shop_widgets
 );
@@ -1480,21 +1543,19 @@ enum APConsoleWidgets : WidgetID {
 
 static constexpr std::initializer_list<NWidgetPart> _nested_ap_console_widgets = {
 	NWidget(NWID_HORIZONTAL),
-		NWidget(WWT_CLOSEBOX, COLOUR_DARK_BLUE),
-		NWidget(WWT_CAPTION, COLOUR_DARK_BLUE), SetStringTip(STR_ARCHIPELAGO_CONSOLE_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS), SetFill(1, 0), SetResize(1, 0),
-		NWidget(WWT_STICKYBOX, COLOUR_DARK_BLUE),
+		NWidget(WWT_CLOSEBOX, COLOUR_MAUVE),
+		NWidget(WWT_CAPTION, COLOUR_MAUVE), SetStringTip(STR_ARCHIPELAGO_CONSOLE_CAPTION, STR_TOOLTIP_WINDOW_TITLE_DRAG_THIS), SetFill(1, 0), SetResize(1, 0),
+		NWidget(WWT_STICKYBOX, COLOUR_MAUVE),
 	EndContainer(),
-	NWidget(WWT_PANEL, COLOUR_DARK_BLUE), SetResize(1, 1),
+	NWidget(WWT_PANEL, COLOUR_MAUVE), SetResize(1, 1),
 		NWidget(NWID_HORIZONTAL),
-			NWidget(WWT_PANEL, COLOUR_DARK_BLUE, WAPCONSOLE_LIST), SetMinimalSize(400, 180), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPCONSOLE_SCROLLBAR), EndContainer(),
-			NWidget(NWID_VSCROLLBAR, COLOUR_DARK_BLUE, WAPCONSOLE_SCROLLBAR),
+			NWidget(WWT_PANEL, COLOUR_MAUVE, WAPCONSOLE_LIST), SetMinimalSize(400, 180), SetFill(1, 1), SetResize(1, 1), SetScrollbar(WAPCONSOLE_SCROLLBAR), EndContainer(),
+			NWidget(NWID_VSCROLLBAR, COLOUR_MAUVE, WAPCONSOLE_SCROLLBAR),
 		EndContainer(),
 		NWidget(NWID_HORIZONTAL),
 			NWidget(WWT_EDITBOX, COLOUR_GREY, WAPCONSOLE_INPUT), SetMinimalSize(300, 14), SetFill(1, 0), SetResize(1, 0), SetStringTip(STR_EMPTY),
-			NWidget(WWT_PUSHTXTBTN, COLOUR_DARK_BLUE, WAPCONSOLE_SEND), SetMinimalSize(60, 14), SetStringTip(STR_ARCHIPELAGO_CONSOLE_SEND),
-			NWidget(WWT_RESIZEBOX, COLOUR_DARK_BLUE),
-		EndContainer(),
-	EndContainer(),
+			NWidget(WWT_PUSHTXTBTN, COLOUR_MAUVE, WAPCONSOLE_SEND), SetMinimalSize(60, 14), SetStringTip(STR_ARCHIPELAGO_CONSOLE_SEND),
+			NWidget(WWT_RESIZEBOX, COLOUR_MAUVE),
 };
 
 struct ArchipelagoConsoleWindow : public Window {
@@ -1560,9 +1621,63 @@ struct ArchipelagoConsoleWindow : public Window {
 		int first = this->scrollbar->GetPosition();
 		int last  = std::min((int)log.size(), first + (int)r.Height() / row_height + 1);
 		int y = r.top + 2;
+		/* Bright pink (palette index 215) for the current AP slot player name */
+		static constexpr TextColour kSlotColour = static_cast<TextColour>(TC_IS_PALETTE_COLOUR | 215);
+		/* Palette light red for trap item names */
+		static const TextColour kTrapColour = GetColourGradient(COLOUR_RED, SHADE_LIGHTEREST).ToTextColour();
+		const std::string &slot = _ap_last_slot;
+
+		/* Draw a plain-text segment (no SCC codes), substituting every occurrence of the
+		 * local slot name with kSlotColour.  Each pixel is drawn exactly once — no overdraw.
+		 * DrawString(SA_LEFT) returns (left + width - 1), so we add 1 to get the next x. */
+		auto DrawSegment = [&](int x, std::string_view sv, TextColour tc) -> int {
+			while (!sv.empty()) {
+				if (!slot.empty()) {
+					auto pos = sv.find(slot);
+					if (pos != std::string_view::npos) {
+						if (pos > 0) {
+							int ret = DrawString(x, r.right - 4, y, sv.substr(0, pos), tc, SA_LEFT | SA_FORCE);
+							if (ret >= x) x = ret + 1;
+						}
+						int ret = DrawString(x, r.right - 4, y, slot, kSlotColour, SA_LEFT | SA_FORCE);
+						if (ret >= x) x = ret + 1;
+						sv = sv.substr(pos + slot.size());
+						continue;
+					}
+				}
+				int ret = DrawString(x, r.right - 4, y, sv, tc, SA_LEFT | SA_FORCE);
+				if (ret >= x) x = ret + 1;
+				break;
+			}
+			return x;
+		};
+
+		/* Walk the SCC-coded string, splitting at colour-code boundaries, and delegate
+		 * each plain-text run to DrawSegment so slot names are highlighted inline. */
+		auto DrawSCC = [&](int x, std::string_view sv, TextColour default_tc) -> int {
+			const char *p   = sv.data();
+			const char *end = p + sv.size();
+			const char *seg = p;
+			TextColour  cur = default_tc;
+			while (p < end) {
+				auto [len, ch] = DecodeUtf8(std::string_view(p, end - p));
+				if (len == 0) break; // Safety: invalid UTF-8
+				if (ch >= SCC_BLUE && ch <= SCC_BLACK) {
+					if (p > seg) x = DrawSegment(x, std::string_view(seg, p - seg), cur);
+					TextColour new_tc = static_cast<TextColour>(static_cast<int>(TC_BLUE) + static_cast<int>(ch - static_cast<char32_t>(SCC_BLUE)));
+					cur = (new_tc == TC_RED) ? kTrapColour : new_tc;
+					p += len; seg = p;
+				} else {
+					p += len;
+				}
+			}
+			if (p > seg) x = DrawSegment(x, std::string_view(seg, p - seg), cur);
+			return x;
+		};
+
 		for (int i = first; i < last; i++) {
 			const APConsoleEntry &entry = log[i];
-			DrawString(r.left + 4, r.right - 4, y, entry.text, entry.colour, SA_LEFT | SA_FORCE);
+			DrawSCC(r.left + 4, entry.text, entry.colour);
 			y += row_height;
 			if (y > r.bottom) break;
 		}

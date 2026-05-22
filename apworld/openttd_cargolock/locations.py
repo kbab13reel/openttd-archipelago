@@ -191,9 +191,12 @@ def get_shop_definitions(world: OpenTTDWorld) -> List[Dict[str, object]]:
 
 
 def _generate_random_shop_cost(rng: "object", min_cost: int, max_cost: int) -> int:
-    """Generate a random shop cost rounded to nearest 5000."""
+    """Generate a random shop cost rounded to the nearest unit scaled to the range."""
     cost = rng.randint(min_cost, max_cost)
-    return int(round(cost / 5000.0) * 5000)
+    span = max_cost - min_cost
+    # Round unit: 1000 for small ranges, up to 5000 for large ranges
+    round_unit = max(1000, min(5000, (span // 10 // 1000) * 1000))
+    return max(min_cost, int(round(cost / round_unit) * round_unit))
 
 
 def _get_tiered_mission_count(world: "OpenTTDWorld", cargo: str) -> int:

@@ -180,34 +180,66 @@ COMPANY_COLOUR_ITEMS = [
     "Company Colour: White",
 ]
 
-FILLER_ITEMS: List[str] = [
-    "Cash Injection",
-    "Choo chooo!",
-    "Town Development Fund",
-    "Civic Honours",
-    "High Demand Period",
-    "Surge Production",
-    "New CEO",
-]
+FILLER_ITEM_IDS = {
+    "Cash Injection": 16,
+    "Choo chooo!": 17,
+    "Town Development Fund": 39,
+    "Civic Honours": 40,
+    "High Demand Period": 41,
+    "Industry Boost": 42,
+    "New CEO": 43,
+}
+
+FILLER_ITEMS: List[str] = list(FILLER_ITEM_IDS)
+
+FILLER_DEFAULT_WEIGHTS = {
+    "Cash Injection": 10,
+    "Choo chooo!": 1,
+    "Town Development Fund": 10,
+    "Civic Honours": 10,
+    "High Demand Period": 10,
+    "Industry Boost": 10,
+    "New CEO": 10,
+}
 
 # Trap items are registered here as they are implemented.
-TRAP_ITEMS: List[str] = [
-    "Town Roadworks",
-    "Recession",
-    "Industry Strike",
-    "Labour Strike",
-    "Reliability Crisis",
-    "Company Scandal",
-    "Wildfire",
-    "Zeppelin Attack",
-    "UFO Invasion",
-    "Warplane Attack",
-    "Helicopter Raid",
-    "Alien Invasion",
-    "Submarine Scout",
-    "Submarine Attack",
-    "Coal Mine Collapse",
-]
+TRAP_ITEM_IDS = {
+    "Town Roadworks": 44,
+    "Recession": 45,
+    "Industry Strike": 46,
+    "Driver Strike": 47,
+    "Breakdown Crisis": 48,
+    "Company Scandal": 49,
+    "Wildfire": 50,
+    "Zeppelin Crash": 51,
+    "Small UFO": 52,
+    "Military Aircraft": 53,
+    "Military Helicopter": 54,
+    "Large UFO": 55,
+    "Small Submarine": 56,
+    "Large Submarine": 57,
+    "Coal Mine Collapse": 58,
+}
+
+TRAP_ITEMS: List[str] = list(TRAP_ITEM_IDS)
+
+TRAP_DEFAULT_WEIGHTS = {
+    "Town Roadworks": 5,
+    "Recession": 1,
+    "Industry Strike": 1,
+    "Driver Strike": 1,
+    "Breakdown Crisis": 1,
+    "Company Scandal": 5,
+    "Wildfire": 5,
+    "Zeppelin Crash": 5,
+    "Small UFO": 5,
+    "Military Aircraft": 5,
+    "Military Helicopter": 5,
+    "Large UFO": 5,
+    "Small Submarine": 5,
+    "Large Submarine": 5,
+    "Coal Mine Collapse": 5,
+}
 
 ITEM_NAME_TO_ID = {
     "Progressive Trains": 1,
@@ -226,31 +258,10 @@ ITEM_NAME_TO_ID = {
     "Steel": 14,
     "Valuables": 15,
     "Progressive Shop Upgrade": 18,
-    # Filler items 
-    "Cash Injection": 16,
-    "Choo chooo!": 17,
-    "Town Development Fund": 39,
-    "Civic Honours": 40,
-    "High Demand Period": 41,
-    "Surge Production": 42,
-    "New CEO": 43,
-    # Trap items (IDs 44–58)
-    "Town Roadworks": 44,
-    "Recession": 45,
-    "Industry Strike": 46,
-    "Labour Strike": 47,
-    "Reliability Crisis": 48,
-    "Company Scandal": 49,
-    "Wildfire": 50,
-    "Zeppelin Attack": 51,
-    "UFO Invasion": 52,
-    "Warplane Attack": 53,
-    "Helicopter Raid": 54,
-    "Alien Invasion": 55,
-    "Submarine Scout": 56,
-    "Submarine Attack": 57,
-    "Coal Mine Collapse": 58,
 }
+
+ITEM_NAME_TO_ID.update(FILLER_ITEM_IDS)
+ITEM_NAME_TO_ID.update(TRAP_ITEM_IDS)
 
 for i, colour_item in enumerate(COMPANY_COLOUR_ITEMS, start=19):
     ITEM_NAME_TO_ID[colour_item] = i
@@ -278,14 +289,10 @@ DEFAULT_ITEM_CLASSIFICATION = {
     "Iron Ore": ItemClassification.progression | ItemClassification.useful,
     "Steel": ItemClassification.progression | ItemClassification.useful,
     "Valuables": ItemClassification.progression | ItemClassification.useful,
-    "Cash Injection": ItemClassification.filler,
-    "Choo chooo!": ItemClassification.filler,
-    "Town Development Fund": ItemClassification.filler,
-    "Civic Honours": ItemClassification.filler,
-    "High Demand Period": ItemClassification.filler,
-    "Surge Production": ItemClassification.filler,
-    "New CEO": ItemClassification.filler,
 }
+
+for filler_item in FILLER_ITEMS:
+    DEFAULT_ITEM_CLASSIFICATION[filler_item] = ItemClassification.filler
 
 for colour_item in COMPANY_COLOUR_ITEMS:
     DEFAULT_ITEM_CLASSIFICATION[colour_item] = ItemClassification.filler

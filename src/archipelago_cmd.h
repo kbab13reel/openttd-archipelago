@@ -15,6 +15,7 @@
 #include "cargotype.h"
 #include "economy_type.h"
 #include "engine_type.h"
+#include "station_type.h"
 #include "town_type.h"
 
 CommandCost CmdAPSetCargoUnlock(DoCommandFlags flags, CompanyID company, uint8_t cargo_type, bool unlocked);
@@ -47,7 +48,7 @@ DEF_CMD_TRAIT(CMD_AP_SET_AIRPORT_TIER, CmdAPSetAirportTier, {}, CommandType::Oth
 DEF_CMD_TRAIT(CMD_AP_SET_UTILITY_UNLOCK, CmdAPSetUtilityUnlock, {}, CommandType::ServerSetting)
 
 CommandCost CmdAPCompanyScandal(DoCommandFlags flags, CompanyID company);
-CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company);
+CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company, StationID station_id);
 CommandCost CmdAPSetPaymentMult(DoCommandFlags flags, int32_t multiplier_pct);
 CommandCost CmdAPTriggerDisaster(DoCommandFlags flags, uint8_t disaster_index);
 

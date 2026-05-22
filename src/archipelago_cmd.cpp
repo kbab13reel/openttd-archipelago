@@ -373,27 +373,31 @@ CommandCost CmdAPCompanyScandal(DoCommandFlags flags, CompanyID company)
 
 	if (flags.Test(DoCommandFlag::Execute)) {
 		for (Town *t : Town::Iterate()) {
-			t->ratings[company] = RATING_MINIMUM;
-			t->have_ratings.Set(company);
+			/* Affect every town in the game — not just ones the company already serves */
+			if (!t->have_ratings.Test(company)) {
+				t->have_ratings.Set(company);
+				t->ratings[company] = RATING_INITIAL;
+			}
+			t->ratings[company] = std::max((int)RATING_APPALLING, t->ratings[company] - 500);
 		}
 	}
 	return CommandCost();
 }
 
 /**
- * AP trap: clear trees within ~20 tiles of every station owned by a company.
- * @param flags    Command execution flags.
- * @param company  The company whose station areas are scorched.
+ * AP trap: clear trees within ~20 tiles of one specific station owned by a company.
+ * @param flags       Command execution flags.
+ * @param company     The company that owns the station.
+ * @param station_id  The station to scorch.
  */
-CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company)
+CommandCost CmdAPWildfire(DoCommandFlags flags, CompanyID company, StationID station_id)
 {
 	if (!Company::IsValidID(company)) return CommandCost();
 
 	if (flags.Test(DoCommandFlag::Execute)) {
-		static constexpr int WILDFIRE_RADIUS = 20;
-		for (const Station *st : Station::Iterate()) {
-			if (st->owner != company) continue;
-			/* Expand a bounding box around this station and clear any tree tiles. */
+		const Station *st = Station::GetIfValid(station_id);
+		if (st != nullptr && st->owner == company) {
+			static constexpr int WILDFIRE_RADIUS = 20;
 			TileIndex centre = st->xy;
 			int cx = (int)TileX(centre);
 			int cy = (int)TileY(centre);

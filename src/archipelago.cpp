@@ -8,6 +8,8 @@
 #include "stdafx.h"
 #include "archipelago.h"
 #include "debug.h"
+#include "table/control_codes.h"
+#include "core/utf8.hpp"
 
 #include "3rdparty/nlohmann/json.hpp"
 using json = nlohmann::json;
@@ -399,7 +401,7 @@ void ArchipelagoClient::Tick()
 				if (callbacks.on_item_received) callbacks.on_item_received(ev.item);
 				break;
 			case InboundEvent::PRINT:
-					if (callbacks.on_print) callbacks.on_print(ev.text, ev.colour);
+				if (callbacks.on_print) callbacks.on_print(ev.text, ev.colored_text, ev.colour);
 				break;
 			case InboundEvent::SLOT_DATA:
 				AP_LOG("[Tick] Dispatching SLOT_DATA event");
@@ -509,6 +511,16 @@ static APSlotData ParseSlotData(const json &msg)
 		Debug(misc, 0, "[AP] SlotData: WARNING — no item_id_to_name! Items cannot be unlocked by name.");
 	}
 
+	/* item_name_to_classification — canonical AP item classes used by GUI categorization */
+	if (d.contains("item_name_to_classification") && d["item_name_to_classification"].is_object()) {
+		for (auto &[name, cls] : d["item_name_to_classification"].items()) {
+			if (!name.empty() && cls.is_string()) {
+				sd.item_name_to_classification[name] = cls.get<std::string>();
+			}
+		}
+		Debug(misc, 0, "[AP] SlotData: {} item name->classification mappings loaded", sd.item_name_to_classification.size());
+	}
+
 	/* location_name_to_id — authoritative mission location mapping from APWorld */
 	if (d.contains("location_name_to_id") && d["location_name_to_id"].is_object()) {
 		for (auto &[name, idv] : d["location_name_to_id"].items()) {
@@ -544,7 +556,6 @@ static APSlotData ParseSlotData(const json &msg)
 	sd.recession_months          = d.value("recession_months",          3);
 	sd.recession_multiplier_pct  = d.value("recession_multiplier_pct",  70);
 	sd.industry_strike_months    = d.value("industry_strike_months",    3);
-	sd.labour_strike_months      = d.value("labour_strike_months",      3);
 	sd.reliability_crisis_months = d.value("reliability_crisis_months", 3);
 	sd.high_demand_months        = d.value("high_demand_months",        6);
 	sd.high_demand_multiplier_pct = d.value("high_demand_multiplier_pct", 150);
@@ -572,9 +583,10 @@ static APSlotData ParseSlotData(const json &msg)
 	if (d.contains("shop_locations") && d["shop_locations"].is_array()) {
 		for (const auto &shop : d["shop_locations"]) {
 			APShopLocation entry;
-			entry.location = shop.value("location", "");
-			entry.name     = shop.value("name", "");
-			entry.cost     = shop.value("cost", (int64_t)0);
+			entry.location       = shop.value("location", "");
+			entry.name           = shop.value("name", "");
+			entry.cost           = shop.value("cost", (int64_t)0);
+			entry.classification = shop.value("classification", "");
 			if (!entry.location.empty()) sd.shop_locations.push_back(std::move(entry));
 		}
 	}
@@ -904,21 +916,24 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 		std::string cmd = msg.value("cmd", "");
 
 		if (cmd == "RoomInfo") {
-			AP_LOG("RoomInfo received — sending Connect packet...");
-			/* Send Connect packet */
-			json connect = json::array();
-			connect.push_back({
+			AP_LOG("RoomInfo received — sending GetDataPackage + Connect packets...");
+			/* Request data package for all games so foreign item/location IDs can be resolved.
+			 * Do NOT send an explicit empty "games" array — some servers treat that as
+			 * "no games requested". Omitting the field requests the full package. */
+			json pkts = json::array();
+			pkts.push_back({{"cmd", "GetDataPackage"}});
+			pkts.push_back({
 				{"cmd",           "Connect"},
 				{"game",          game_name},
 				{"name",          slot_name},
 				{"password",      password},
-				{"uuid",          "openttd-archipelago-01"},
-				{"version",       {{"major",0},{"minor",6},{"build",0},{"class","Version"}}},
-				{"tags",          json::array({"DeathLink"})},
+				{"uuid",          "openttd-cargolock-01"},
+				{"version",       {{"major",0},{"minor",6},{"build",7},{"class","Version"}}},
+				{"tags",          json::array()},
 				{"items_handling", 7}
 			});
 			std::lock_guard<std::mutex> lg(outbound_mutex);
-			outbound_queue.push_front({ connect.dump() });
+			outbound_queue.push_front({ pkts.dump() });
 
 		} else if (cmd == "Connected") {
 			AP_OK("Authenticated! Parsing slot data...");
@@ -963,7 +978,7 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 			AP_OK(fmt::format("Slot data parsed: {} missions, start_year={}, vehicle='{}'",
 			      sd.mission_count, sd.start_year, sd.starting_vehicle));
 
-			PushEvent({ InboundEvent::CONNECTED, {}, {}, {} });
+			PushEvent({ InboundEvent::CONNECTED, {}, {}, {}, {} });
 
 			/* Location scouting request removed in current apworld payload. */
 			InboundEvent sdev;
@@ -979,7 +994,7 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 			last_error = "Connection refused: " + reason;
 			AP_ERR("Server refused connection: " + reason);
 			state.store(APState::AP_ERROR);
-			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 
 		} else if (cmd == "ReceivedItems") {
 			/* AP protocol sends item_id, not item_name.
@@ -1053,8 +1068,34 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 
 		} else if (cmd == "PrintJSON") {
 			std::string text_out;
+			std::string colored_text_out;
 			APPrintColour msg_colour = APPrintColour::DEFAULT;
 			bool colour_set = false;
+
+			/* Map AP colour → nearest OpenTTD SCC colour code for inline rendering */
+			auto APColourToSCC = [](APPrintColour c) -> StringControlCode {
+				switch (c) {
+					case APPrintColour::RED:       return SCC_RED;
+					case APPrintColour::SALMON:    return SCC_RED;        /* red for traps */
+					case APPrintColour::YELLOW:    return SCC_YELLOW;
+					case APPrintColour::ORANGE:    return SCC_ORANGE;
+					case APPrintColour::GREEN:     return SCC_GREEN;
+					case APPrintColour::BLUE:      return SCC_DKBLUE;
+					case APPrintColour::CYAN:      return SCC_LTBLUE;    /* normal items */
+					case APPrintColour::MAGENTA:   return SCC_PURPLE;
+					case APPrintColour::PLUM:      return SCC_PURPLE;    /* progression items */
+					case APPrintColour::SLATEBLUE: return SCC_GOLD;      /* useful items */
+					case APPrintColour::WHITE:     return SCC_WHITE;
+					default:                       return SCC_WHITE;
+				}
+			};
+
+			/* Append a colour-switched segment to a SCC-encoded string */
+			auto AppendColored = [&](const std::string &ptext, APPrintColour c) {
+				const auto encoded = EncodeUtf8((char32_t)APColourToSCC(c));
+				colored_text_out.append(encoded.first, encoded.second);
+				colored_text_out += ptext;
+			};
 
 			auto ParseColourName = [](const std::string &name) -> APPrintColour {
 				if (name == "red") return APPrintColour::RED;
@@ -1109,34 +1150,98 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 					std::string ptype = part.value("type", "text");
 					std::string ptext = part.value("text", "");
 
-					if (!colour_set) {
-						APPrintColour part_colour = DerivePartColour(part, ptype);
-						if (part_colour != APPrintColour::DEFAULT) {
-							msg_colour = part_colour;
-							colour_set = true;
-						}
+					/* Always derive per-part colour for inline SCC coloring */
+					APPrintColour part_colour = DerivePartColour(part, ptype);
+					/* Track message colour: SALMON (trap) always wins over any other colour */
+					if (part_colour == APPrintColour::SALMON) {
+						msg_colour = APPrintColour::SALMON;
+						colour_set = true;
+					} else if (!colour_set && part_colour != APPrintColour::DEFAULT) {
+						msg_colour = part_colour;
+						colour_set = true;
 					}
 
 					if (ptype == "item_id" || ptype == "item_name") {
-						/* Resolve item ID → human name */
+						/* Resolve item ID → human name, falling back to part-provided name or per-game DataPackage table */
 						auto iid_opt = ParseInteger<int64_t>(ptext);
 						if (iid_opt.has_value()) {
 							auto it = current_sd.item_id_to_name.find(*iid_opt);
-							if (it != current_sd.item_id_to_name.end())
+							if (it != current_sd.item_id_to_name.end()) {
 								ptext = it->second;
-							else
-								ptext = "an item"; /* Foreign game item — ID not in our map */
+							} else {
+								/* Prefer an explicit item_name field from the server if present */
+								if (part.contains("item_name") && part["item_name"].is_string() && !part["item_name"].get<std::string>().empty()) {
+									ptext = part["item_name"].get<std::string>();
+								} else {
+									/* Try per-game map: prefer part['game'] if supplied, else use part['player']->player_id_to_game */
+									std::string game_key;
+									if (part.contains("game") && part["game"].is_string()) {
+										game_key = part["game"].get<std::string>();
+									} else {
+										int64_t item_player = part.value("player", int64_t(0));
+										auto pg = player_id_to_game.find(item_player);
+										if (pg != player_id_to_game.end()) game_key = pg->second;
+									}
+									if (!game_key.empty()) {
+										auto gm = game_item_id_to_name.find(game_key);
+										if (gm != game_item_id_to_name.end()) {
+											auto nm = gm->second.find(*iid_opt);
+											if (nm != gm->second.end()) {
+												ptext = nm->second;
+											} else {
+												/* No mapping for this id in the game's datamap */
+												Debug(misc, 1, "[AP] DataPackage: no item name for id {} in game {}", *iid_opt, game_key);
+												ptext = part.value("item_name", "an item");
+											}
+										} else {
+											Debug(misc, 1, "[AP] DataPackage: no game '{}' available for item id {}", game_key, *iid_opt);
+											ptext = part.value("item_name", "an item");
+										}
+									} else {
+										ptext = part.value("item_name", "an item");
+									}
+								}
+							}
 						}
 						text_out += ptext;
 					} else if (ptype == "location_id" || ptype == "location_name") {
-						/* Resolve location ID → human name */
+						/* Resolve location ID → human name, falling back to part-provided name or per-game DataPackage table */
 						auto lid_opt = ParseInteger<int64_t>(ptext);
 						if (lid_opt.has_value()) {
 							auto it = location_id_to_name.find(*lid_opt);
-							if (it != location_id_to_name.end())
+							if (it != location_id_to_name.end()) {
 								ptext = it->second;
-							else
-								ptext = "a location"; /* Foreign game location — ID not in our map */
+							} else {
+								if (part.contains("location_name") && part["location_name"].is_string() && !part["location_name"].get<std::string>().empty()) {
+									ptext = part["location_name"].get<std::string>();
+								} else {
+									std::string game_key;
+									if (part.contains("game") && part["game"].is_string()) {
+										game_key = part["game"].get<std::string>();
+									} else {
+										int64_t loc_player = part.value("player", int64_t(0));
+										auto pg = player_id_to_game.find(loc_player);
+										if (pg != player_id_to_game.end()) game_key = pg->second;
+									}
+									if (!game_key.empty()) {
+										auto gm = game_location_id_to_name.find(game_key);
+										if (gm != game_location_id_to_name.end()) {
+											auto nm = gm->second.find(*lid_opt);
+											if (nm != gm->second.end()) {
+												ptext = nm->second;
+											} else {
+												Debug(misc, 1, "[AP] DataPackage: no location name for id {} in game {}", *lid_opt, game_key);
+												ptext = part.value("location_name", "a location");
+											}
+										} else {
+											Debug(misc, 1, "[AP] DataPackage: no game '{}' available for location id {}", game_key, *lid_opt);
+											ptext = part.value("location_name", "a location");
+										}
+									} else {
+										ptext = part.value("location_name", "a location");
+									}
+								}
+							}
 						}
 						text_out += ptext;
 					} else if (ptype == "player_id") {
@@ -1151,9 +1256,48 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 					} else {
 						text_out += ptext;
 					}
+
+					/* Append per-part colour-switched segment to colored text */
+					AppendColored(ptext, part_colour);
 				}
 			}
-			if (!text_out.empty()) PushEvent({ InboundEvent::PRINT, text_out, msg_colour, {}, {} });
+			if (!text_out.empty()) {
+				InboundEvent ev;
+				ev.type = InboundEvent::PRINT;
+				ev.text = text_out;
+				ev.colored_text = colored_text_out;
+				ev.colour = msg_colour;
+				PushEvent(std::move(ev));
+			}
+
+		} else if (cmd == "DataPackage") {
+			/* Build per-game id→name reverse maps for all games in the multiworld */
+			if (msg.contains("data") && msg["data"].is_object() &&
+			    msg["data"].contains("games") && msg["data"]["games"].is_object()) {
+				game_item_id_to_name.clear();
+				game_location_id_to_name.clear();
+				for (auto &[game, gdata] : msg["data"]["games"].items()) {
+					if (gdata.contains("item_name_to_id") && gdata["item_name_to_id"].is_object()) {
+						auto &imap = game_item_id_to_name[game];
+						for (auto &[name, idv] : gdata["item_name_to_id"].items())
+							if (idv.is_number_integer()) imap[idv.get<int64_t>()] = name;
+					}
+					if (gdata.contains("location_name_to_id") && gdata["location_name_to_id"].is_object()) {
+						auto &lmap = game_location_id_to_name[game];
+						for (auto &[name, idv] : gdata["location_name_to_id"].items())
+							if (idv.is_number_integer()) lmap[idv.get<int64_t>()] = name;
+					}
+				}
+				size_t gcount = 0;
+				if (msg.contains("data") && msg["data"].is_object() &&
+					msg["data"].contains("games") && msg["data"]["games"].is_object()) {
+					gcount = msg["data"]["games"].size();
+				}
+				AP_LOG(fmt::format("[AP] DataPackage: {} games loaded", gcount));
+				if (gcount == 0) {
+					Debug(misc, 1, "[AP] DataPackage handler received empty games list: {}", msg.dump());
+				}
+			}
 
 		} else if (cmd == "RoomUpdate") {
 			/* Sent when another client for this slot checks locations.
@@ -1172,7 +1316,7 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 				}
 				if (added > 0) {
 					AP_LOG(fmt::format("RoomUpdate: {} new checked location(s) merged", added));
-					PushEvent({ InboundEvent::LOCATIONS_UPDATED, {}, {}, {}, {} });
+					PushEvent({ InboundEvent::LOCATIONS_UPDATED, {}, {}, {}, {}, {} });
 				}
 			}
 
@@ -1225,7 +1369,7 @@ void ArchipelagoClient::WorkerThread()
 		last_error = "Could not resolve host: " + host;
 		AP_ERR("DNS lookup failed for " + host);
 		state.store(APState::AP_ERROR);
-		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 		return;
 	}
 
@@ -1234,7 +1378,7 @@ void ArchipelagoClient::WorkerThread()
 		freeaddrinfo(res);
 		last_error = "Socket creation failed";
 		state.store(APState::AP_ERROR);
-		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 		return;
 	}
 
@@ -1245,7 +1389,7 @@ void ArchipelagoClient::WorkerThread()
 		last_error = "Could not connect to " + host + ":" + fmt::format("{}", port);
 		AP_ERR("TCP connection refused — is the AP server running?");
 		state.store(APState::AP_ERROR);
-		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 		return;
 	}
 	freeaddrinfo(res);
@@ -1297,7 +1441,7 @@ void ArchipelagoClient::WorkerThread()
 		if (getaddrinfo(host.c_str(), port_str.c_str(), &hints2, &res2) != 0 || res2 == nullptr) {
 			last_error = "Could not resolve host: " + host;
 			state.store(APState::AP_ERROR);
-			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 			return;
 		}
 		s = socket(res2->ai_family, res2->ai_socktype, res2->ai_protocol);
@@ -1305,7 +1449,7 @@ void ArchipelagoClient::WorkerThread()
 			freeaddrinfo(res2);
 			last_error = "Socket creation failed (WS retry)";
 			state.store(APState::AP_ERROR);
-			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 			return;
 		}
 		AP_LOG(fmt::format("Retrying TCP connect to {}:{} (plain WS)...", host, port));
@@ -1314,7 +1458,7 @@ void ArchipelagoClient::WorkerThread()
 			sock_close(s);
 			last_error = "Could not connect to " + host + ":" + fmt::format("{}", port);
 			state.store(APState::AP_ERROR);
-			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 			return;
 		}
 		freeaddrinfo(res2);
@@ -1324,7 +1468,7 @@ void ArchipelagoClient::WorkerThread()
 			last_error = "WebSocket handshake failed (both WSS and WS attempted)";
 			AP_ERR("Both WSS and WS failed — check server address.");
 			state.store(APState::AP_ERROR);
-			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+			PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 			return;
 		}
 		AP_OK("Plain WS connection established.");
@@ -1335,7 +1479,7 @@ void ArchipelagoClient::WorkerThread()
 		sock_close(s);
 		last_error = "WebSocket handshake failed";
 		state.store(APState::AP_ERROR);
-		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {} });
+		PushEvent({ InboundEvent::DISCONNECTED, last_error, {}, {}, {} });
 		return;
 	}
 	AP_OK("WS connection established.");
@@ -1386,5 +1530,5 @@ void ArchipelagoClient::WorkerThread()
 #endif
 	AP_WARN("Worker thread exiting — connection lost");
 	if (state.load() != APState::AP_ERROR) state.store(APState::DISCONNECTED);
-	PushEvent({ InboundEvent::DISCONNECTED, "Disconnected", {}, {} });
+	PushEvent({ InboundEvent::DISCONNECTED, "Disconnected", {}, {}, {} });
 }

@@ -54,6 +54,13 @@ void AP_EnsureBasesets();
 bool              AP_IsConnected();
 int64_t AP_GetLiveMissionProgress(const APMission &m);
 
+struct APActiveEffect {
+	std::string name;          ///< Short display name (e.g. "Recession", "High Demand")
+	int64_t     months_left;   ///< Months remaining (clamped to >= 0)
+	int64_t     end_flat_month; ///< Absolute flat econ month when effect expires
+};
+std::vector<APActiveEffect> AP_GetActiveEffects();
+
 /* World-start handshake — called from intro_gui.cpp ONLY.
  * StartNewGameWithoutGUI must never be called from inside a timer callback. */
 void     EnsureHandlersRegistered();

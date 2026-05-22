@@ -12,6 +12,9 @@
 
 /** Global cargo payment multiplier applied by Archipelago trap/filler items (100 = normal, 150 = +50%, 70 = recession). */
 int _ap_payment_multiplier_pct = 100;
+
+/** True while an Archipelago game session is active (set by archipelago_manager.cpp). */
+extern bool _ap_session_started;
 #include <ranges>
 #include "company_func.h"
 #include "command_func.h"
@@ -847,6 +850,14 @@ static void CompaniesPayInterest()
 
 static void HandleEconomyFluctuations()
 {
+	/* Archipelago manages its own recession/demand items — prevent vanilla
+	 * economy fluctuations from stacking on top and producing a larger-than-
+	 * configured payment drop or prolonged recovery. */
+	if (_ap_session_started) {
+		if (EconomyIsInRecession()) _economy.fluct = 312; /* exit recession state — any positive value works */
+		return;
+	}
+
 	if (_settings_game.difficulty.economy != 0) {
 		/* When economy is Fluctuating, decrease counter */
 		_economy.fluct--;
@@ -1226,7 +1237,7 @@ void CargoPayment::PayFinalDelivery(CargoType cargo, const CargoPacket *cp, uint
 
 	/* Record per-vehicle-type delivery for Archipelago mission tracking. */
 	if (AP_IsActive()) {
-		AP_RecordCargoDelivery(this->front->owner, this->front->type, cargo, (uint32_t)count);
+		AP_RecordCargoDelivery(this->front->owner, this->front->type, cargo, (uint32_t)count, this->current_station);
 	}
 
 	/* The vehicle's profit is whatever route profit there is minus feeder shares. */
