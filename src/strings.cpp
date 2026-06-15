@@ -1678,7 +1678,9 @@ static void FormatString(StringBuilder &builder, std::string_view str_arg, Strin
 						}
 					}
 
-					GetStringWithArgs(builder, e->info.string_id, {});
+					if (e->info.string_id != INVALID_STRING_ID) {
+						GetStringWithArgs(builder, e->info.string_id, {});
+					}
 					break;
 				}
 

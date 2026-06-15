@@ -542,6 +542,13 @@ static APSlotData ParseSlotData(const json &msg)
 	}
 
 	sd.enable_shop = GetBoolLike("enable_shop", sd.enable_shop);
+	sd.train_tier_count = std::max(1, d.value("train_tier_count", sd.train_tier_count));
+	sd.road_tier_count = std::max(1, d.value("road_vehicle_tier_count", sd.road_tier_count));
+	sd.aircraft_tier_count = std::max(1, d.value("aircraft_tier_count", sd.aircraft_tier_count));
+	sd.ship_tier_count = std::max(1, d.value("ship_tier_count", sd.ship_tier_count));
+	sd.enable_trams = GetBoolLike("enable_trams", sd.enable_trams);
+	sd.tram_tier_count = std::max(1, d.value("tram_tier_count", sd.tram_tier_count));
+	sd.vehicle_tier_distribution_mode = std::clamp(d.value("vehicle_tier_distribution_mode", sd.vehicle_tier_distribution_mode), 0, 1);
 	if (d.contains("shop_tiers") && d["shop_tiers"].is_number_integer()) {
 		sd.shop_tiers = d["shop_tiers"].get<int>();
 	}

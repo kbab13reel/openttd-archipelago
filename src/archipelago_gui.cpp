@@ -1026,7 +1026,7 @@ static const char * const AP_UTILITY_ORDER[] = {
 };
 static const char * const AP_VEHICLE_ORDER[] = {
 	"Progressive Trains", "Progressive Road Vehicles",
-	"Progressive Aircrafts", "Progressive Ships",
+	"Progressive Aircrafts", "Progressive Ships", "Progressive Trams",
 };
 
 struct ArchipelagoInventoryWindow : public Window {

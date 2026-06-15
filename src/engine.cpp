@@ -144,6 +144,7 @@ Engine::Engine(VehicleType type, uint16_t local_id)
  */
 bool Engine::IsEnabled() const
 {
+
 	return this->info.string_id != STR_NEWGRF_INVALID_ENGINE && this->info.climates.Test(_settings_game.game_creation.landscape);
 }
 

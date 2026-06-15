@@ -491,22 +491,18 @@ static void BuildEngineMap()
 	_ap_engine_map.clear();
 	_ap_engine_extras.clear();
 	for (const Engine *e : Engine::Iterate()) {
-		/* Primary: context-aware name — returns the NewGRF/callback name when
-		 * available, and the language-file name for vanilla engines.
-		 * However, EngineNameContext::PurchaseList only returns a non-empty name
-		 * for engines that are currently in the purchase list (i.e. introduced and
-		 * not yet expired).  With never_expire_vehicles=true already set above,
-		 * expiry is no longer an issue — but intro_date still applies in early
-		 * game years, so some future engines may still return empty here. */
-		std::string name = GetString(STR_ENGINE_NAME,
-		    PackEngineNameDParam(e->index, EngineNameContext::PurchaseList));
+		/* Skip engines that have no valid string source — calling GetString(STR_ENGINE_NAME)
+		 * for these would internally call GetStringWithArgs with INVALID_STRING_ID and crash. */
+		if (e->info.string_id == INVALID_STRING_ID || e->info.string_id == STR_NEWGRF_INVALID_ENGINE) continue;
 
-		/* Fallback: if the PurchaseList context returned empty (engine not yet
-		 * available for purchase), get the name directly from the engine's
-		 * string_id.  This is always populated for both vanilla and NewGRF
-		 * engines, so it gives us the name regardless of availability. */
-		if (name.empty() && e->info.string_id != STR_NEWGRF_INVALID_ENGINE) {
-			name = GetString(e->info.string_id);
+		/* Primary: engine string_id — always populated for vanilla + NewGRF engines. */
+		std::string name = GetString(e->info.string_id);
+
+		/* Fallback: callback/context-aware name for sets that override display
+		 * names via purchase-list callbacks (e.g. Iron Horse name variants). */
+		if (name.empty()) {
+			name = GetString(STR_ENGINE_NAME,
+			    PackEngineNameDParam(e->index, EngineNameContext::PurchaseList));
 		}
 
 		if (name.empty()) continue;
@@ -682,6 +678,8 @@ void AP_RegisterConsoleCommands()
 	IConsole::CmdRegister("ap", ConCmdAP);
 }
 
+static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintColour::DEFAULT, NewsType news_type = NewsType::General, NewsStyle news_style = NewsStyle::Small, StringID company_title = INVALID_STRING_ID, NewsReference ref1 = {});
+
 /* -------------------------------------------------------------------------
  * AP_UnlockEngineByName
  * Calls OpenTTD's own EnableEngineForCompany() which handles:
@@ -693,9 +691,10 @@ void AP_RegisterConsoleCommands()
 
 // Unlock all engines in a progressive tier for a given progressive item name
 
-/* Progressive vehicle tier table — vehicle names per tier per item.
- * Kept at file scope so AP_GetProgressiveTiers() can expose it to the GUI. */
-static const std::map<std::string, std::vector<std::vector<std::string>>> _ap_progressive_tiers = {
+/* Curated vanilla progressive vehicle tiers.
+ * Runtime tiers are rebuilt from these, then augmented with unknown engines
+ * by intro date according to slot-data tier counts. */
+static const std::map<std::string, std::vector<std::vector<std::string>>> _ap_curated_progressive_tiers = {
     {"Progressive Trains", {
         {"Kirby Paul Tank (Steam)", "Chaney 'Jubilee' (Steam)", "Ginzu 'A4' (Steam)", "SH '8P' (Steam)"},
         {"Manley-Morel DMU (Diesel)", "'Dash' (Diesel)", "SH/Hendry '25' (Diesel)", "UU '37' (Diesel)", "Floss '47' (Diesel)", "SH '125' (Diesel)"},
@@ -722,6 +721,9 @@ static const std::map<std::string, std::vector<std::vector<std::string>>> _ap_pr
     }}
 };
 
+/* Runtime progressive tiers shown in GUI and used for AP unlock routing. */
+static std::map<std::string, std::vector<std::vector<std::string>>> _ap_progressive_tiers;
+
 struct APAirportTierUnlock {
 	const char *name;
 	uint8_t airport_type;
@@ -729,12 +731,251 @@ struct APAirportTierUnlock {
 
 static constexpr TimerGameCalendar::Year AP_LOCKED_AIRPORT_YEAR = TimerGameCalendar::Year{5000001};
 
-static const std::vector<std::vector<APAirportTierUnlock>> _ap_progressive_airport_tiers = {
+static const std::vector<std::vector<APAirportTierUnlock>> _ap_base_progressive_airport_tiers = {
 	{{"Heliport", AT_HELIPORT}, {"Helistation", AT_HELISTATION}, {"Helidepot", AT_HELIDEPOT}, {"Small Airport", AT_SMALL}},
 	{{"City Airport", AT_LARGE}, {"Commuter Airport", AT_COMMUTER}},
 	{{"Metropolitan Airport", AT_METROPOLITAN}, {"International Airport", AT_INTERNATIONAL}},
 	{{"Intercontinental Airport", AT_INTERCON}},
 };
+
+static std::vector<std::vector<APAirportTierUnlock>> _ap_progressive_airport_tiers;
+
+static int AP_GetConfiguredTierCount(const std::string &item_name)
+{
+	const APSlotData &sd = AP_GetSlotData();
+	if (item_name == "Progressive Trains") return std::max(1, sd.train_tier_count);
+	if (item_name == "Progressive Road Vehicles") return std::max(1, sd.road_tier_count);
+	if (item_name == "Progressive Aircrafts") return std::max(1, sd.aircraft_tier_count);
+	if (item_name == "Progressive Ships") return std::max(1, sd.ship_tier_count);
+	if (item_name == "Progressive Trams") return std::max(1, sd.tram_tier_count);
+	return 1;
+}
+
+static int AP_CompressCuratedTierIndex(int curated_idx, int curated_count, int configured_count)
+{
+	if (configured_count <= 1) return 0;
+	if (curated_idx < configured_count - 1) return curated_idx;
+	return configured_count - 1;
+}
+
+static std::string AP_GetProgressiveItemForEngine(const Engine *e)
+{
+	if (e == nullptr) return {};
+	if (e->type == VEH_TRAIN) {
+		if (e->VehInfo<RailVehicleInfo>().railveh_type == RAILVEH_WAGON) return {};
+		return "Progressive Trains";
+	}
+	if (e->type == VEH_SHIP) return "Progressive Ships";
+	if (e->type == VEH_AIRCRAFT) return "Progressive Aircrafts";
+	if (e->type == VEH_ROAD) {
+		if (e->info.misc_flags.Test(EngineMiscFlag::RoadIsTram)) {
+			if (AP_GetSlotData().enable_trams) return "Progressive Trams";
+			return "Progressive Road Vehicles";
+		}
+		return "Progressive Road Vehicles";
+	}
+	return {};
+}
+
+struct APVehicleCandidate {
+	EngineID id;
+	TimerGameCalendar::Date intro_date;
+	std::string name;
+};
+
+static void AP_RebuildProgressiveTierDefinitions()
+{
+	_ap_progressive_tiers.clear();
+
+	const APSlotData &sd = AP_GetSlotData();
+	const std::array<std::string, 5> progressive_items = {
+		"Progressive Trains",
+		"Progressive Road Vehicles",
+		"Progressive Aircrafts",
+		"Progressive Ships",
+		"Progressive Trams",
+	};
+
+	for (const std::string &item_name : progressive_items) {
+		if (item_name == "Progressive Trams" && !sd.enable_trams) continue;
+		_ap_progressive_tiers[item_name] = std::vector<std::vector<std::string>>(AP_GetConfiguredTierCount(item_name));
+	}
+
+	std::map<std::string, std::vector<APVehicleCandidate>> candidates_by_item;
+	std::map<std::string, std::map<std::string, std::vector<EngineID>>> ids_by_item_and_name;
+
+	for (const Engine *e : Engine::Iterate()) {
+		if (e == nullptr || !e->IsEnabled()) continue;
+		std::string item_name = AP_GetProgressiveItemForEngine(e);
+		if (item_name.empty()) continue;
+		if (_ap_progressive_tiers.find(item_name) == _ap_progressive_tiers.end()) continue;
+
+		/* Skip engines with no valid string source to avoid crashing inside STR_ENGINE_NAME path. */
+		if (e->info.string_id == INVALID_STRING_ID || e->info.string_id == STR_NEWGRF_INVALID_ENGINE) continue;
+
+		std::string name = GetString(e->info.string_id);
+		if (name.empty()) {
+			name = GetString(STR_ENGINE_NAME, PackEngineNameDParam(e->index, EngineNameContext::PurchaseList));
+		}
+		if (name.empty()) continue;
+
+		candidates_by_item[item_name].push_back({e->index, e->intro_date, name});
+		ids_by_item_and_name[item_name][name].push_back(e->index);
+	}
+
+	std::set<EngineID> assigned_ids;
+	std::map<std::string, std::set<std::string>> assigned_names;
+
+	for (const auto &[item_name, curated_tiers] : _ap_curated_progressive_tiers) {
+		auto rt_it = _ap_progressive_tiers.find(item_name);
+		if (rt_it == _ap_progressive_tiers.end()) continue;
+
+		const int configured_count = (int)rt_it->second.size();
+
+		for (int curated_idx = 0; curated_idx < (int)curated_tiers.size(); curated_idx++) {
+			const int resolved_idx = AP_CompressCuratedTierIndex(curated_idx, (int)curated_tiers.size(), configured_count);
+			for (const std::string &veh_name : curated_tiers[curated_idx]) {
+				auto item_names_it = ids_by_item_and_name.find(item_name);
+				if (item_names_it == ids_by_item_and_name.end()) continue;
+				auto ids_it = item_names_it->second.find(veh_name);
+				if (ids_it == item_names_it->second.end()) continue;
+
+				bool any_assigned = false;
+				for (EngineID eid : ids_it->second) {
+					if (assigned_ids.insert(eid).second) any_assigned = true;
+				}
+				if (any_assigned) {
+					rt_it->second[resolved_idx].push_back(veh_name);
+					assigned_names[item_name].insert(veh_name);
+				}
+			}
+		}
+	}
+
+	for (auto &[item_name, candidates] : candidates_by_item) {
+		auto rt_it = _ap_progressive_tiers.find(item_name);
+		if (rt_it == _ap_progressive_tiers.end()) continue;
+		if (rt_it->second.empty()) continue;
+
+		std::vector<APVehicleCandidate> unknown;
+		unknown.reserve(candidates.size());
+		std::set<std::string> seen_names;
+		auto assigned_name_it = assigned_names.find(item_name);
+		for (const APVehicleCandidate &c : candidates) {
+			if (assigned_name_it != assigned_names.end() && assigned_name_it->second.count(c.name) != 0) continue;
+			if (seen_names.insert(c.name).second == false) continue;
+			if (assigned_ids.count(c.id) == 0) unknown.push_back(c);
+		}
+
+		std::sort(unknown.begin(), unknown.end(), [](const APVehicleCandidate &a, const APVehicleCandidate &b) {
+			if (a.intro_date != b.intro_date) return a.intro_date < b.intro_date;
+			if (a.name != b.name) return a.name < b.name;
+			return a.id.base() < b.id.base();
+		});
+
+		const int tier_count = (int)rt_it->second.size();
+		const int n = (int)unknown.size();
+
+		if (n == 0) {
+			/* No unknown vehicles for this category. */
+		} else if (sd.vehicle_tier_distribution_mode == 0) {
+			/* Mode 0: Simple count tiers.
+			 * Sort by intro date, divide into N equal-count groups.
+			 * Each tier gets approximately count/tier_count vehicles. */
+			for (int t = 0; t < tier_count; t++) {
+				const int start = (n * t) / tier_count;
+				const int end = (n * (t + 1)) / tier_count;
+				for (int i = start; i < end; i++) {
+					rt_it->second[t].push_back(unknown[i].name);
+					assigned_ids.insert(unknown[i].id);
+				}
+			}
+		} else if (sd.vehicle_tier_distribution_mode == 1) {
+			/* Mode 1: Simple date tiers.
+			 * Divide date span into N equal time intervals.
+			 * Assign each vehicle to the interval containing its intro date.
+			 * Compact tiers to avoid empty middle tiers. */
+			if (tier_count == 1) {
+				/* Single tier: all go here. */
+				for (const auto &u : unknown) {
+					rt_it->second[0].push_back(u.name);
+					assigned_ids.insert(u.id);
+				}
+			} else {
+				auto min_date = unknown.front().intro_date;
+				auto max_date = unknown.back().intro_date;
+				auto span = max_date.base() - min_date.base();
+
+				if (span == 0) {
+					/* All vehicles have the same intro date: distribute by count. */
+					for (int t = 0; t < tier_count; t++) {
+						const int start = (n * t) / tier_count;
+						const int end = (n * (t + 1)) / tier_count;
+						for (int i = start; i < end; i++) {
+							rt_it->second[t].push_back(unknown[i].name);
+							assigned_ids.insert(unknown[i].id);
+						}
+					}
+				} else {
+					/* Assign to tiers based on date intervals. */
+					for (const auto &u : unknown) {
+						auto offset = u.intro_date.base() - min_date.base();
+						int tier = std::min(tier_count - 1, (int)(offset * tier_count / span));
+						rt_it->second[tier].push_back(u.name);
+						assigned_ids.insert(u.id);
+					}
+
+					/* Compact: move vehicles from empty middle tiers to fill gaps. */
+					std::vector<int> non_empty_indices;
+					for (int t = 0; t < tier_count; t++) {
+						if (!rt_it->second[t].empty()) {
+							non_empty_indices.push_back(t);
+						}
+					}
+
+					if (!non_empty_indices.empty() && (int)non_empty_indices.size() < tier_count) {
+						/* Some tiers are empty; compact to fill from tier 0. */
+						auto old_tiers = rt_it->second;
+						rt_it->second.clear();
+						rt_it->second.resize(tier_count);
+						for (size_t i = 0; i < non_empty_indices.size(); i++) {
+							rt_it->second[i] = old_tiers[non_empty_indices[i]];
+						}
+					}
+				}
+			}
+		} else {
+			/* Unknown mode: fall back to simple count tiers. */
+			for (int t = 0; t < tier_count; t++) {
+				const int start = (n * t) / tier_count;
+				const int end = (n * (t + 1)) / tier_count;
+				for (int i = start; i < end; i++) {
+					rt_it->second[t].push_back(unknown[i].name);
+					assigned_ids.insert(unknown[i].id);
+				}
+			}
+		}
+	}
+
+	_ap_progressive_airport_tiers.clear();
+	_ap_progressive_airport_tiers.resize(std::max(1, sd.aircraft_tier_count));
+	const int airport_curated_count = (int)_ap_base_progressive_airport_tiers.size();
+	const int airport_configured_count = (int)_ap_progressive_airport_tiers.size();
+	for (int curated_idx = 0; curated_idx < airport_curated_count; curated_idx++) {
+		const int resolved_idx = AP_CompressCuratedTierIndex(curated_idx, airport_curated_count, airport_configured_count);
+		for (const APAirportTierUnlock &airport : _ap_base_progressive_airport_tiers[curated_idx]) {
+			_ap_progressive_airport_tiers[resolved_idx].push_back(airport);
+		}
+	}
+
+	if (sd.enable_trams) {
+		auto tr_it = candidates_by_item.find("Progressive Trams");
+		if (tr_it == candidates_by_item.end() || tr_it->second.empty()) {
+			AP_WARN("yaml option enable_trams is on but no tram engines detected!");
+			AP_ShowNews("yaml option enable_trams is on but no tram engines detected!", APPrintColour::YELLOW, NewsType::General, NewsStyle::Thin);
+		}
+	}
+}
 
 /* Tracks how many tiers have been unlocked per progressive item this session. */
 static std::map<std::string, int> _ap_unlocked_tier_counts;
@@ -773,6 +1014,20 @@ bool AP_IsAirportTypeUnlocked(uint8_t airport_type)
 	int tier = 0;
 	auto it = _ap_unlocked_tier_counts.find("Progressive Aircrafts");
 	if (it != _ap_unlocked_tier_counts.end()) tier = it->second;
+	bool known_airport_type = false;
+	for (const auto &tier_unlocks : _ap_progressive_airport_tiers) {
+		for (const auto &unlock : tier_unlocks) {
+			if (unlock.airport_type == airport_type) {
+				known_airport_type = true;
+				break;
+			}
+		}
+		if (known_airport_type) break;
+	}
+	if (!known_airport_type) {
+		/* NewGRF airports not in curated vanilla tiers: allow once aircraft progression starts. */
+		return tier > 0;
+	}
 	/* Check if airport_type is in any tier <= (tier-1) (0-indexed). */
 	for (int t = 0; t < tier && t < (int)_ap_progressive_airport_tiers.size(); t++) {
 		for (const auto &unlock : _ap_progressive_airport_tiers[t]) {
@@ -876,7 +1131,7 @@ static bool AP_UnlockEngineByName(const std::string &name)
     if (cid >= MAX_COMPANIES) return false;
     if (!_ap_engine_map_built) BuildEngineMap();
 
-    // Define progressive tiers based on Python source of truth
+	// Progressive tiers are resolved at runtime from curated + intro-date logic.
     const auto &progressive_tiers = _ap_progressive_tiers;
 
     // Track which tier is unlocked for each progressive item
@@ -885,7 +1140,8 @@ static bool AP_UnlockEngineByName(const std::string &name)
     auto prog = progressive_tiers.find(name);
     if (prog != progressive_tiers.end()) {
         int &tier = unlocked_tiers[name];
-        if (tier >= (int)prog->second.size()) return false; // All tiers unlocked
+		while (tier < (int)prog->second.size() && prog->second[tier].empty()) tier++;
+		if (tier >= (int)prog->second.size()) return false; // All tiers unlocked
         const auto &vehicles = prog->second[tier];
         /* Track unlocked engines for the GUI filter (AP_IsEngineUnlocked).
          * We no longer modify company_avail or EngineFlag — the build vehicle
@@ -988,7 +1244,7 @@ static std::string AP_TrimAPPrefix(std::string text)
 
 static void AP_PushToConsole(const std::string &text, TextColour colour); // forward declaration — defined after _ap_console_log
 
-static void AP_ShowNews(const std::string &text, APPrintColour colour = APPrintColour::DEFAULT, NewsType news_type = NewsType::General, NewsStyle news_style = NewsStyle::Small, StringID company_title = INVALID_STRING_ID, NewsReference ref1 = {})
+static void AP_ShowNews(const std::string &text, APPrintColour colour, NewsType news_type, NewsStyle news_style, StringID company_title, NewsReference ref1)
 {
 	/* Normalize server/client messages so console/news never show duplicated
 	 * tags like "[AP] [AP] ...". */
@@ -2310,6 +2566,10 @@ static IntervalTimer<TimerGameRealtime> _ap_realtime_timer(
 			 * posted above, the Execute phase has already run locally (sync
 			 * dispatch), so the setting is in effect by this point. */
 			BuildEngineMap();
+
+			/* Resolve progressive tiers from curated defaults + intro-date fallback
+			 * using current runtime engine roster and slot-data tier counts. */
+			AP_RebuildProgressiveTierDefinitions();
 
 			/* Build the cargo name → type map for mission evaluation */
 			BuildCargoMap();

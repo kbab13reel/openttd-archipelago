@@ -7,7 +7,7 @@ from .items import FILLER_DEFAULT_WEIGHTS, TRAP_DEFAULT_WEIGHTS
 
 
 # ═══════════════════════════════════════════════════════════════
-#  RANDOMIZER OPTIONS
+#  GAMEPLAY OPTIONS
 # ═══════════════════════════════════════════════════════════════
 
 class StartingVehicleType(Choice):
@@ -45,10 +45,6 @@ class StartingCashBonus(Toggle):
     display_name = "Starting Cash Bonus"
     default = 0
 
-
-# ═══════════════════════════════════════════════════════════════
-#  INFRASTRUCTURE LOCKS (Gameplay Options)
-# ═══════════════════════════════════════════════════════════════
 
 class LockBridges(Toggle):
     """Lock bridge construction behind the 'Bridges' AP item.
@@ -253,6 +249,76 @@ class RevealShopItems(Toggle):
     display_name = "Reveal Shop Items"
     default = 1
 
+
+# ═══════════════════════════════════════════════════════════════
+#  NEWGRF VEHICLE OPTIONS
+# ═══════════════════════════════════════════════════════════════
+
+class VehicleTierDistributionMode(Choice):
+    """How unknown/modded vehicles are assigned to progression tiers.
+    Only NewGRF/unknown vehicles are affected; curated vanilla vehicles remain in their curated tiers,
+    although lowering the configured tier count can compress vanilla curated tiers.
+    Simple Date Tiers: divide the date span (earliest to latest intro date) into N time intervals,
+    assigning each vehicle to its interval and ensuring no empty middle tiers.
+    Simple Count Tiers: sort all vehicles by intro date, then split into N equal-count groups."""
+    display_name = "Vehicle Tier Distribution Mode"
+    option_simple_date_tiers = 0
+    option_simple_count_tiers = 1
+    default = 0
+
+
+class EnableTrams(Toggle):
+    """Add Progressive Trams Items. Requieres a NewGRF with trams to be installed.
+    If false, trams will be put in the Road Vehicles category.
+    """
+    display_name = "Enable Trams"
+    default = 0
+
+
+class TrainTierCount(Range):
+    """How many train tiers : the number of Progressive Trains items there will be in the pool.
+    Allows for more or less tiers depending on how many vehicles there are when starting a save and using NewGRFs."""
+    display_name = "Train Tier Count"
+    range_start = 1
+    range_end = 8
+    default = 5
+
+
+class RoadVehicleTierCount(Range):
+    """How many road vehicle tiers : the number of Progressive Road Vehicles items there will be in the pool.
+    Allows for more or less tiers depending on how many vehicles there are when starting a save and using NewGRFs."""
+    display_name = "Road Vehicle Tier Count"
+    range_start = 1
+    range_end = 8
+    default = 4
+
+
+class AircraftTierCount(Range):
+    """How many aircraft tiers : the number of Progressive Aircraft items there will be in the pool.
+    Allows for more or less tiers depending on how many vehicles there are when starting a save and using NewGRFs."""
+    display_name = "Aircraft Tier Count"
+    range_start = 1
+    range_end = 8
+    default = 4
+
+
+class ShipTierCount(Range):
+    """How many ship tiers : the number of Progressive Ship items there will be in the pool.
+    Allows for more or less tiers depending on how many vehicles there are when starting a save and using NewGRFs."""
+    display_name = "Ship Tier Count"
+    range_start = 1
+    range_end = 8
+    default = 3
+
+
+class TramTierCount(Range):
+    """How many tram tiers : the number of Progressive Tram items there will be in the pool.
+    Only used when Enable Trams is on.
+    Allows for more or less tiers depending on how many vehicles there are when starting a save and using NewGRFs."""
+    display_name = "Tram Tier Count"
+    range_start = 1
+    range_end = 8
+    default = 3
 
 # ═══════════════════════════════════════════════════════════════
 #  FILLERS AND TRAPS
@@ -495,6 +561,15 @@ class OpenTTDOptions(PerGameCommonOptions):
     lock_canals:                     LockCanals
     lock_terraforming:               LockTerraforming
 
+    # NewGRF Vehicle Options
+    vehicle_tier_distribution_mode:  VehicleTierDistributionMode
+    enable_trams:                    EnableTrams
+    tram_tier_count:                 TramTierCount
+    train_tier_count:                TrainTierCount
+    road_vehicle_tier_count:         RoadVehicleTierCount
+    aircraft_tier_count:             AircraftTierCount
+    ship_tier_count:                 ShipTierCount
+
     # Mission Options
     cargo_vehicle_mission_count:     CargoVehicleMissionCount
     global_tiered_mission_count:     GlobalTieredMissionCount
@@ -581,6 +656,15 @@ openttd_option_groups = [
         ShopCostMin,
         ShopCostMax,
         RevealShopItems,
+    ]),
+    OptionGroup("NewGRF Vehicle Options", [
+        VehicleTierDistributionMode,
+        EnableTrams,
+        TrainTierCount,
+        RoadVehicleTierCount,
+        AircraftTierCount,
+        ShipTierCount,
+        TramTierCount,
     ]),
     OptionGroup("Fillers and Traps", [
         FillerWeights,

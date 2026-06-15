@@ -1,149 +1,15 @@
 from __future__ import annotations
-from typing import Dict, List, TYPE_CHECKING
+from typing import List, TYPE_CHECKING
 from BaseClasses import Item, ItemClassification
 if TYPE_CHECKING:
     from .world import OpenTTDWorld
 
-PROGRESSIVE_TRAINS: List[List[str]] = [[
-    "Kirby Paul Tank (Steam)",
-    "Chaney 'Jubilee' (Steam)",
-    "Ginzu 'A4' (Steam)",
-    "SH '8P' (Steam)",
-],[
-    "Manley-Morel DMU (Diesel)",
-    "'Dash' (Diesel)",
-    "SH/Hendry '25' (Diesel)",
-    "UU '37' (Diesel)",
-    "Floss '47' (Diesel)",
-    "SH '125' (Diesel)",
-],[
-    "SH '30' (Electric)",
-    "SH '40' (Electric)",
-    "'AsiaStar' (Electric)",
-    "'T.I.M.' (Electric)",
-],[
-    "'X2001' (Electric)",
-    "'Millennium Z1' (Electric)",
-],[
-    "Lev1 'Leviathan' (Electric)",
-    "Lev2 'Cyclops' (Electric)",
-    "Lev3 'Pegasus' (Electric)",
-    "Lev4 'Chimaera' (Electric)",
-]]
-
-PROGRESSIVE_ROAD_VEHICLES: List[List[str]] = [[
-    "MPS Regal Bus",
-    "MPS Mail Truck",
-    "Balogh Coal Truck",
-    "Hereford Grain Truck",
-    "Balogh Goods Truck",
-    "Witcombe Oil Tanker",
-    "Witcombe Wood Truck",
-    "MPS Iron Ore Truck",
-    "Balogh Steel Truck",
-    "Balogh Armoured Truck",
-    "Talbott Livestock Van",
-],[
-    "Hereford Leopard Bus",
-    "Reynard Mail Truck",
-    "Uhl Coal Truck",
-    "Thomas Grain Truck",
-    "Craighead Goods Truck",
-    "Foster Oil Tanker",
-    "Foster Wood Truck",
-    "Uhl Iron Ore Truck",
-    "Uhl Steel Truck",
-    "Uhl Armoured Truck",
-    "Uhl Livestock Van",
-],[
-    "Foster Bus",
-    "Perry Mail Truck",
-    "DW Coal Truck",
-    "Goss Grain Truck",
-    "Goss Goods Truck",
-    "Perry Oil Tanker",
-    "Moreland Wood Truck",
-    "Chippy Iron Ore Truck",
-    "Kelling Steel Truck",
-    "Foster Armoured Truck",
-    "Foster Livestock Van",
-],[
-    "Foster MkII Superbus",
-]]
-
-PROGRESSIVE_AIRCRAFT: List[List[str]] = [[
-    "Sampson U52",
-    "Bakewell Cotswald LB-3",
-    "Tricario Helicopter",
-],[
-    "Coleman Count",
-    "FFP Dart",
-    "Bakewell Luckett LB-8",
-    "Darwin 100",
-    "Yate Aerospace YAC 1-11",
-    "Bakewell Luckett LB-9",
-    "Guru X2 Helicopter",
-],[
-    "Darwin 200",
-    "Darwin 300",
-    "Yate Haugan",
-    "Guru Galaxy",
-    "Bakewell Luckett LB-10",
-    "Airtaxi A21",
-    "Bakewell Luckett LB80",
-    "Yate Aerospace YAe46",
-    "Darwin 400",
-    "Darwin 500",
-    "Airtaxi A31",
-    "Dinger 100",
-    "Airtaxi A32",
-    "Bakewell Luckett LB-11",
-    "Darwin 600",
-    "Airtaxi A33",
-],[    
-    "AirTaxi A34-1000",
-    "Dinger 1000",
-    "Dinger 200",
-    "Yate Z-Shuttle",
-    "Kelling K1",
-    "Kelling K6",
-    "FFP Hyperdart 2",
-    "Kelling K7",
-    "Darwin 700",
-]]
-
-PROGRESSIVE_AIRPORTS: List[List[str]] = [[
-    "Heliport",
-    "Helistation",
-    "Helidepot",
-    "Small Airport",
-],[
-    "City Airport",
-    "Commuter Airport",
-],[
-    "Metropolitan Airport",
-    "International Airport",
-],[
-    "Intercontinental Airport",
-]]
-
-PROGRESSIVE_SHIPS: List[List[str]] = [[
-    "MPS Passenger Ferry",
-    "MPS Oil Tanker",
-    "Yate Cargo Ship",
-],[
-    "FFP Passenger Ferry",
-    "CS-Inc. Oil Tanker",
-    "Bakewell Cargo Ship",
-],[
-    "Bakewell 300 Hovercraft",
-]]
-
-PROGRESSIVE_VEHICLE_TIERS: Dict[str, int] = {
-    "Progressive Trains": len(PROGRESSIVE_TRAINS),
-    "Progressive Road Vehicles": len(PROGRESSIVE_ROAD_VEHICLES),
-    "Progressive Aircrafts": len(PROGRESSIVE_AIRCRAFT),
-    "Progressive Ships": len(PROGRESSIVE_SHIPS),
+DEFAULT_PROGRESSIVE_VEHICLE_TIERS = {
+    "Progressive Trains": 5,
+    "Progressive Road Vehicles": 4,
+    "Progressive Aircrafts": 4,
+    "Progressive Ships": 3,
+    "Progressive Trams": 3,
 }
 
 CARGO_TYPES = [  # Temperate
@@ -258,6 +124,7 @@ ITEM_NAME_TO_ID = {
     "Steel": 14,
     "Valuables": 15,
     "Progressive Shop Upgrade": 18,
+    "Progressive Trams": 59,
 }
 
 ITEM_NAME_TO_ID.update(FILLER_ITEM_IDS)
@@ -277,6 +144,7 @@ DEFAULT_ITEM_CLASSIFICATION = {
     "Progressive Road Vehicles": ItemClassification.progression,
     "Progressive Aircrafts": ItemClassification.progression,
     "Progressive Ships": ItemClassification.progression,
+    "Progressive Trams": ItemClassification.progression,
     "Progressive Shop Upgrade": ItemClassification.progression,
     "Passengers": ItemClassification.progression | ItemClassification.useful,
     "Mail": ItemClassification.progression | ItemClassification.useful,
@@ -337,7 +205,14 @@ def create_item_with_correct_classification(world: OpenTTDWorld, name: str) -> O
 
 def create_all_items(world: OpenTTDWorld) -> None:
     # Work on local copies; module-level constants must stay immutable across worlds.
-    progressive_counts = dict(PROGRESSIVE_VEHICLE_TIERS)
+    progressive_counts = {
+        "Progressive Trains": max(1, world.options.train_tier_count.value),
+        "Progressive Road Vehicles": max(1, world.options.road_vehicle_tier_count.value),
+        "Progressive Aircrafts": max(1, world.options.aircraft_tier_count.value),
+        "Progressive Ships": max(1, world.options.ship_tier_count.value),
+    }
+    if world.options.enable_trams.value:
+        progressive_counts["Progressive Trams"] = max(1, world.options.tram_tier_count.value)
     available_cargo_types = list(CARGO_TYPES)
     available_company_colours = list(COMPANY_COLOUR_ITEMS)
 
@@ -348,6 +223,7 @@ def create_all_items(world: OpenTTDWorld) -> None:
         "Progressive Road Vehicles": set(available_cargo_types),
         "Progressive Ships": set(available_cargo_types),
         "Progressive Aircrafts": {"Passengers", "Mail", "Goods", "Valuables"},
+        "Progressive Trams": set(available_cargo_types),
     }
 
     vehicle_start_choices = [

@@ -250,6 +250,22 @@ bool AP_IsCompanyAirportTypeUnlocked(CompanyID company, uint8_t airport_type)
 	if (airport_type == AT_OILRIG) return true;
 
 	int tier = _ap_company_airport_tier[company.base()];
+	bool known_airport_type = false;
+	for (const auto &tier_entries : _ap_cmd_airport_tiers) {
+		for (const auto &entry : tier_entries) {
+			if (entry.airport_type == airport_type) {
+				known_airport_type = true;
+				break;
+			}
+		}
+		if (known_airport_type) break;
+	}
+	if (!known_airport_type) {
+		/* NewGRF airport types not listed in curated tiers: allow once
+		 * at least one Progressive Aircrafts tier is unlocked. */
+		return tier > 0;
+	}
+
 	for (int t = 0; t < tier && t < (int)_ap_cmd_airport_tiers.size(); t++) {
 		for (const auto &entry : _ap_cmd_airport_tiers[t]) {
 			if (entry.airport_type == airport_type) return true;

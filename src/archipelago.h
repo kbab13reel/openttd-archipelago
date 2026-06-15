@@ -92,6 +92,16 @@ struct APSlotData {
 
 	/* ── Difficulty / balance ───────────────────────────────────────── */
 	bool                    starting_cash_bonus  = false; ///< false=off, true=grant one full starting-loan amount
+	int                     train_tier_count    = 5;
+	/* Preferred key name used by APWorld slot_data. */
+	int                     road_vehicle_tier_count = 4;
+	/* Back-compat field name kept for older code paths. */
+	int                     road_tier_count     = 4;
+	int                     aircraft_tier_count = 4;
+	int                     ship_tier_count     = 3;
+	bool                    enable_trams        = false;
+	int                     tram_tier_count     = 3;
+	int                     vehicle_tier_distribution_mode = 0; ///< 0=simple_count_tiers, 1=simple_date_tiers
 	bool                    enable_shop         = true;
 	int                     shop_tiers          = 5;
 
