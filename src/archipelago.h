@@ -323,6 +323,7 @@ bool AP_IsTrainUnlocked();
 bool AP_IsRoadVehicleUnlocked();
 bool AP_IsAircraftUnlocked();
 bool AP_IsShipUnlocked();
+bool AP_IsTramsUnlocked();
 
 /** Returns true when an engine has been explicitly unlocked by AP items.
  *  Used by the build-vehicle GUI to filter the purchase list. */

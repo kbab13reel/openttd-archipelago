@@ -994,6 +994,7 @@ bool AP_IsTrainUnlocked() { return AP_IsProgressiveUnlocked("Progressive Trains"
 bool AP_IsRoadVehicleUnlocked() { return AP_IsProgressiveUnlocked("Progressive Road Vehicles"); }
 bool AP_IsAircraftUnlocked() { return AP_IsProgressiveUnlocked("Progressive Aircrafts"); }
 bool AP_IsShipUnlocked() { return AP_IsProgressiveUnlocked("Progressive Ships"); }
+bool AP_IsTramsUnlocked() { return AP_IsProgressiveUnlocked("Progressive Trams"); }
 
 bool AP_IsEngineUnlocked(EngineID eid)
 {

@@ -392,8 +392,9 @@ struct BuildRoadToolbarWindow : Window {
 			WID_ROT_BUILD_WAYPOINT,
 			WID_ROT_BUS_STATION,
 			WID_ROT_TRUCK_STATION);
-		bool can_build_depot = can_build && AP_IsRoadVehicleUnlocked();
-		bool can_build_station = can_build && AP_IsRoadVehicleUnlocked();
+		bool vehicle_unlocked = (rtt == RTT_TRAM) ? AP_IsTramsUnlocked() : AP_IsRoadVehicleUnlocked();
+		bool can_build_depot = can_build && vehicle_unlocked;
+		bool can_build_station = can_build && vehicle_unlocked;
 		this->SetWidgetDisabledState(WID_ROT_DEPOT, !can_build_depot);
 		this->SetWidgetDisabledState(WID_ROT_BUS_STATION, !can_build_station);
 		this->SetWidgetDisabledState(WID_ROT_TRUCK_STATION, !can_build_station);
