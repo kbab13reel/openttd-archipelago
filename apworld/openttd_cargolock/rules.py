@@ -28,7 +28,8 @@ VEHICULE_CARGO_COMPATIBILITY = {
     "train": CARGO_TYPES,
     "road_vehicle": CARGO_TYPES,
     "ship": CARGO_TYPES,
-    "aircraft": {"Passengers", "Mail", "Goods", "Valuables"}
+    "aircraft": {"Passengers", "Mail", "Goods", "Valuables"},
+    "tram": CARGO_TYPES,
 }
 
 
@@ -38,13 +39,14 @@ def has_vehicle_type(state: CollectionState, player: int, vehicle_type: str) -> 
     Args:
         state: The current game state
         player: The player ID
-        vehicle_type: One of "train", "road_vehicle", "ship", or "aircraft"
+        vehicle_type: One of "train", "road_vehicle", "ship", "aircraft", or "tram"
     """
     vehicle_items = {
         "train": "Progressive Trains",
         "road_vehicle": "Progressive Road Vehicles",
         "ship": "Progressive Ships",
         "aircraft": "Progressive Aircrafts",
+        "tram": "Progressive Trams",
     }
     
     item_name = vehicle_items.get(vehicle_type)
@@ -73,7 +75,7 @@ def has_cargo(state: CollectionState, player: int, cargo: str) -> bool:
             return False
     
     # Must have a vehicle that can transport this cargo type
-    vehicle_types = ["train", "road_vehicle", "ship", "aircraft"]
+    vehicle_types = ["train", "road_vehicle", "ship", "aircraft", "tram"]
     for vehicle_type in vehicle_types:
         if has_vehicle_type(state, player, vehicle_type):
             if cargo in VEHICULE_CARGO_COMPATIBILITY[vehicle_type]:
@@ -86,7 +88,8 @@ def unlocked_vehicle_type_count(state: CollectionState, player: int) -> int:
     return int(has_vehicle_type(state, player, "train")) + \
         int(has_vehicle_type(state, player, "road_vehicle")) + \
         int(has_vehicle_type(state, player, "ship")) + \
-        int(has_vehicle_type(state, player, "aircraft"))
+        int(has_vehicle_type(state, player, "aircraft")) + \
+        int(has_vehicle_type(state, player, "tram"))
 
 
 def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, tier: int) -> bool:
@@ -247,14 +250,15 @@ def set_all_rules(world: "OpenTTDWorld") -> None:
 
     # ── CARGO-BY-VEHICLE MISSION RULES ───────────────────────────────────────────
     # Each "Transport <Cargo> by <Vehicle>" location requires:
-    #   - has_cargo(cargo)  — cargo unlocked + industry chain deps + any vehicle tier 1
-    #   - has_vehicle_type(vehicle_key)  — that specific vehicle type unlocked
+    #   - cargo unlocked (no has_cargo logic, just the item)
+    #   - that specific vehicle type unlocked
+    # Vehicle-cargo compatibility is already enforced by locations.py
     for mission in get_cargo_vehicle_missions(world):
         cargo   = mission["cargo"]
         vkey    = mission["vehicle_key"]
         loc_name = mission["location"]
         rule = lambda state, c=cargo, v=vkey: (
-            has_cargo(state, player, c)
+            state.has(c, player)
             and has_vehicle_type(state, player, v)
         )
         multiworld.get_location(loc_name, player).access_rule = rule

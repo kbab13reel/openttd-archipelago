@@ -303,6 +303,7 @@ bool AP_IsCompanyCargoUnlocked(CompanyID company, uint8_t cargo_type);
 /** Reset per-company cargo unlock state (called at AP session start). */
 void AP_ResetCompanyCargoUnlocks(CompanyID company);
 void AP_RecordCargoDelivery(CompanyID cid, VehicleType vtype, CargoType ct, uint32_t amount, StationID sid);
+void AP_RecordCargoDelivery(CompanyID cid, const Vehicle *v, CargoType ct, uint32_t amount, StationID sid);
 
 /** Per-company AP-active flag — true if this company has AP restrictions (synchronized). */
 bool AP_IsCompanyAPActive(CompanyID company);

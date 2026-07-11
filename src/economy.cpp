@@ -1237,7 +1237,7 @@ void CargoPayment::PayFinalDelivery(CargoType cargo, const CargoPacket *cp, uint
 
 	/* Record per-vehicle-type delivery for Archipelago mission tracking. */
 	if (AP_IsActive()) {
-		AP_RecordCargoDelivery(this->front->owner, this->front->type, cargo, (uint32_t)count, this->current_station);
+		AP_RecordCargoDelivery(this->front->owner, this->front, cargo, (uint32_t)count, this->current_station);
 	}
 
 	/* The vehicle's profit is whatever route profit there is minus feeder shares. */

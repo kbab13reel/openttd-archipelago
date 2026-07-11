@@ -53,14 +53,16 @@ _TIERED_LOCATION_NAMES: List[str] = [
 ]
 
 # ── Cargo-by-vehicle mission constants ────────────────────────────────────
-# All valid (cargo, vehicle_key, vehicle_display) combinations.
+# All valid (cargo, vehicle_key, vehicle_display) combinations (without trams).
 # Aircraft can only carry Passengers, Mail, Goods, Valuables → 4 combos.
-# Trains/Road Vehicles/Ships carry all 11 → 33 combos.  Total: 37.
+# Trains/Road Vehicles/Ships carry all 11 → 33 combos.
+# Trams (if enabled) carry same as road vehicles (all 11) → +11 combos. Max: 48.
 _VEHICLE_DISPLAY: Dict[str, str] = {
     "train":        "Train",
     "road_vehicle": "Road Vehicle",
     "ship":         "Ship",
     "aircraft":     "Aircraft",
+    "tram":         "Tram",
 }
 _AIRCRAFT_CARGOS = ["Passengers", "Mail", "Goods", "Valuables"]
 
@@ -74,6 +76,17 @@ CARGO_VEHICLE_COMBINATIONS: List[tuple] = [
     ]
     for cargo in compat
 ]
+
+def get_cargo_vehicle_combinations(world: "OpenTTDWorld") -> List[tuple]:
+    """Return cargo-vehicle combinations including trams if enabled.
+    Trams carry the same cargo as road vehicles (all 11 types)."""
+    combos = list(CARGO_VEHICLE_COMBINATIONS)
+    if world.options.enable_trams.value:
+        combos.extend([
+            (cargo, "tram", _VEHICLE_DISPLAY["tram"])
+            for cargo in CARGO_TYPES
+        ])
+    return combos
 
 _ALL_CARGO_VEHICLE_LOCATION_NAMES: List[str] = [
     f"Transport {cargo} by {vdisp}"
@@ -138,7 +151,13 @@ _cv_id_start = _tiered_id_start + len(_TIERED_LOCATION_NAMES)
 for _i, _name in enumerate(_ALL_CARGO_VEHICLE_LOCATION_NAMES, start=_cv_id_start):
     LOCATION_NAME_TO_ID[_name] = _i
 
-_shop_id_start = _cv_id_start + len(_ALL_CARGO_VEHICLE_LOCATION_NAMES)
+# Pre-register all possible tram cargo-vehicle location names (for when enable_trams is true)
+_tram_cv_id_start = _cv_id_start + len(_ALL_CARGO_VEHICLE_LOCATION_NAMES)
+for _i, cargo in enumerate(CARGO_TYPES):
+    _tram_loc_name = f"Transport {cargo} by Tram"
+    LOCATION_NAME_TO_ID[_tram_loc_name] = _tram_cv_id_start + _i
+
+_shop_id_start = _tram_cv_id_start + len(CARGO_TYPES)
 for index in range(1, MAX_SHOP_SLOTS + 1):
     LOCATION_NAME_TO_ID[f"Purchase Shop {index}"] = _shop_id_start + index - 1
 
@@ -243,18 +262,19 @@ def get_cargo_vehicle_missions(world: "OpenTTDWorld") -> List[Dict[str, object]]
 
     YAML option `cargo_vehicle_mission_count`:
       0  → no missions generated
-      37 → all 37 combinations
-      N  → N randomly chosen from the 37 using world.random (deterministic per seed)
+      All available → all combinations (37 without trams, 48 with trams)
+      N  → N randomly chosen using world.random (deterministic per seed)
     """
     cached = getattr(world, "_openttd_cached_cv_missions", None)
     if cached is not None:
         return cached
 
+    all_combos = get_cargo_vehicle_combinations(world)
     count = int(world.options.cargo_vehicle_mission_count.value)
     if count == 0:
         selected: List[tuple] = []
-    elif count >= len(CARGO_VEHICLE_COMBINATIONS):
-        selected = list(CARGO_VEHICLE_COMBINATIONS)
+    elif count >= len(all_combos):
+        selected = list(all_combos)
     else:
         # Use a stable RNG seeded from the multiworld seed + player so this
         # function produces the same selection regardless of call order.
@@ -263,7 +283,7 @@ def get_cargo_vehicle_missions(world: "OpenTTDWorld") -> List[Dict[str, object]]
         # directly would produce a different sample in UT than in original gen.
         seed_str = f"{world.multiworld.seed_name}|cv|{world.player}"
         rng = py_random.Random(seed_str)
-        selected = rng.sample(CARGO_VEHICLE_COMBINATIONS, count)
+        selected = rng.sample(all_combos, count)
 
     result = [
         {
@@ -330,6 +350,10 @@ def create_all_locations(world: OpenTTDWorld) -> List[OpenTTDLocation]:
                 overworld.locations.append(event_loc)
         # Create every pre-registered CV location.
         for name in _ALL_CARGO_VEHICLE_LOCATION_NAMES:
+            overworld.locations.append(OpenTTDLocation(world.player, name, LOCATION_NAME_TO_ID[name], overworld))
+        # Create all pre-registered tram CV locations (for when enable_trams is true).
+        for cargo in CARGO_TYPES:
+            name = f"Transport {cargo} by Tram"
             overworld.locations.append(OpenTTDLocation(world.player, name, LOCATION_NAME_TO_ID[name], overworld))
         # Create all pre-registered shop slots.
         for index in range(1, MAX_SHOP_SLOTS + 1):

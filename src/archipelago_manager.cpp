@@ -182,7 +182,8 @@ static constexpr int AP_VTYPE_TRAIN    = 0;
 static constexpr int AP_VTYPE_ROAD     = 1;
 static constexpr int AP_VTYPE_SHIP     = 2;
 static constexpr int AP_VTYPE_AIRCRAFT = 3;
-static constexpr int AP_VTYPE_COUNT    = 4;
+static constexpr int AP_VTYPE_TRAM     = 4;
+static constexpr int AP_VTYPE_COUNT    = 5;
 
 static constexpr uint8_t AP_MAX_COMPANIES = 15; /* matches MAX_COMPANIES */
 
@@ -225,6 +226,7 @@ static int AP_VehicleKeyToIndex(const std::string &key)
 	if (key == "road_vehicle") return AP_VTYPE_ROAD;
 	if (key == "ship")         return AP_VTYPE_SHIP;
 	if (key == "aircraft")     return AP_VTYPE_AIRCRAFT;
+	if (key == "tram")         return AP_VTYPE_TRAM;
 	return -1;
 }
 
@@ -276,6 +278,35 @@ void AP_RecordCargoDelivery(CompanyID cid, VehicleType vtype, CargoType ct, uint
 	if (!AP_GetCompanyAPActiveIdx(cid.base())) return;
 	if (ct >= NUM_CARGO) return;
 	int idx = AP_VehicleTypeToIndex(vtype);
+	if (idx < 0) return;
+	_ap_cumul[cid.base()].cargo_by_vtype[idx][ct] += amount;
+	_ap_cumul[cid.base()].last_station_by_cargo[ct] = sid;
+}
+
+/**
+ * Record a cargo delivery by Vehicle. Detects trams and routes to appropriate index.
+ * Called from economy.cpp when the local company's vehicle delivers cargo to a station.
+ */
+void AP_RecordCargoDelivery(CompanyID cid, const Vehicle *v, CargoType ct, uint32_t amount, StationID sid)
+{
+	if (cid.base() >= AP_MAX_COMPANIES) return;
+	if (!AP_GetCompanyAPActiveIdx(cid.base())) return;
+	if (ct >= NUM_CARGO) return;
+	if (v == nullptr) return;
+	
+	int idx;
+	/* Detect trams: road vehicles with the RoadIsTram flag */
+	if (v->type == VEH_ROAD && v->engine_type != EngineID::Invalid()) {
+		const Engine *e = Engine::Get(v->engine_type);
+		if (e != nullptr && e->info.misc_flags.Test(EngineMiscFlag::RoadIsTram)) {
+			idx = AP_VTYPE_TRAM;
+		} else {
+			idx = AP_VTYPE_ROAD;
+		}
+	} else {
+		idx = AP_VehicleTypeToIndex(v->type);
+	}
+	
 	if (idx < 0) return;
 	_ap_cumul[cid.base()].cargo_by_vtype[idx][ct] += amount;
 	_ap_cumul[cid.base()].last_station_by_cargo[ct] = sid;
