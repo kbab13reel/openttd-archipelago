@@ -92,7 +92,7 @@ def unlocked_vehicle_type_count(state: CollectionState, player: int) -> int:
         int(has_vehicle_type(state, player, "tram"))
 
 
-def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, tier: int) -> bool:
+def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, tier: int, trams_enabled: bool) -> bool:
     """Return True if the player has at least `tier` progressive vehicles that can carry this cargo.
 
     Tier mapping for tiered missions:
@@ -108,10 +108,12 @@ def has_vehicle_tier_for_cargo(state: CollectionState, player: int, cargo: str, 
         "ship": "Progressive Ships",
         "aircraft": "Progressive Aircrafts",
     }
+    if trams_enabled:
+        vehicle_items["tram"] = "Progressive Trams"
     return any(
         state.count(vehicle_items[vtype], player) >= tier
         for vtype, cargos in VEHICULE_CARGO_COMPATIBILITY.items()
-        if cargo in cargos
+        if vtype in vehicle_items and cargo in cargos
     )
 
 
@@ -210,6 +212,7 @@ def set_all_rules(world: "OpenTTDWorld") -> None:
         if getattr(world.options, opt_key).value
     ]
     utilities_required_tier = int(world.options.utilities_required_tier.value)
+    trams_enabled = bool(world.options.enable_trams.value)
 
     for mission in get_tiered_missions(world):
         cargo = mission["cargo"]
@@ -232,17 +235,17 @@ def set_all_rules(world: "OpenTTDWorld") -> None:
         else:
             prev_event_item = f"Transport {CARGO_TIER_LABELS[tier - 2]} units of {cargo} Done"
             if locked_utilities and tier >= utilities_required_tier:
-                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item, lu=locked_utilities: (
+                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item, lu=locked_utilities, te=trams_enabled: (
                     has_cargo(state, player, c)
                     and state.has(prev, player)
-                    and has_vehicle_tier_for_cargo(state, player, c, vt)
+                    and has_vehicle_tier_for_cargo(state, player, c, vt, te)
                     and has_all_utilities(state, player, lu)
                 )
             else:
-                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item: (
+                rule = lambda state, c=cargo, vt=vtier, prev=prev_event_item, te=trams_enabled: (
                     has_cargo(state, player, c)
                     and state.has(prev, player)
-                    and has_vehicle_tier_for_cargo(state, player, c, vt)
+                    and has_vehicle_tier_for_cargo(state, player, c, vt, te)
                 )
 
         multiworld.get_location(loc_name, player).access_rule = rule

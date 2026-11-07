@@ -173,7 +173,7 @@ struct APSTChunkHandler : ChunkHandler {
          * cargov_N = flat [vtype][cargo] array; contains the ground truth totals.
          * ape_N   = comma-separated engine IDs that are individually unlocked. */
         constexpr int NC = 64;
-        constexpr int NV = 4;
+        constexpr int NV = 5;
         for (uint8_t c = 0; c < AP_SL_MAX_COMPANIES; c++) {
             if (!AP_GetCompanyAPActiveIdx(c)) continue;
             KVSet(_ap_sl_blob, fmt::format("apf_{}", c), "1");
@@ -268,7 +268,7 @@ struct APSTChunkHandler : ChunkHandler {
              * Legacy fallback B: single "cargov" key (single-company pre-multiAP) —
              *   loaded into the sole AP-active company. */
             constexpr int NC = 64;
-            constexpr int NV = 4;
+            constexpr int NV = 5;
             bool any_new_format = false;
             for (uint8_t c = 0; c < AP_SL_MAX_COMPANIES; c++) {
                 if (KVGet(_ap_sl_blob, fmt::format("apf_{}", c), "0") != "1") continue;

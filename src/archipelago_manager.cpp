@@ -177,7 +177,7 @@ static CargoType AP_FindCargoType(const std::string &name)
  * complete save for all AP companies.
  * ---------------------------------------------------------------------- */
 
-/* Per-vehicle-type cargo counters: index 0=train, 1=road, 2=ship, 3=aircraft */
+/* Per-vehicle-type cargo counters: train, road, ship, aircraft, tram. */
 static constexpr int AP_VTYPE_TRAIN    = 0;
 static constexpr int AP_VTYPE_ROAD     = 1;
 static constexpr int AP_VTYPE_SHIP     = 2;
@@ -298,7 +298,7 @@ void AP_RecordCargoDelivery(CompanyID cid, const Vehicle *v, CargoType ct, uint3
 	/* Detect trams: road vehicles with the RoadIsTram flag */
 	if (v->type == VEH_ROAD && v->engine_type != EngineID::Invalid()) {
 		const Engine *e = Engine::Get(v->engine_type);
-		if (e != nullptr && e->info.misc_flags.Test(EngineMiscFlag::RoadIsTram)) {
+		if (e != nullptr && e->info.misc_flags.Test(EngineMiscFlag::RoadIsTram) && AP_GetSlotData().enable_trams) {
 			idx = AP_VTYPE_TRAM;
 		} else {
 			idx = AP_VTYPE_ROAD;
@@ -1355,6 +1355,7 @@ static std::string _ap_pending_cargo_news;
 int64_t  AP_GetSavedItemsIndex()                  { return _ap_saved_items_index; }
 void     AP_SetSavedItemsIndex(int64_t v)         { _ap_saved_items_index = v; }
 void AP_RestoreItemsIndexBeforeConnect();  /* forward decl — exported, defined later */
+void AP_SaveConnectionConfig();
 
 /* ── Timed effect state (AP trap / filler items) ──────────────────────── */
 /* All expiry values are "flat economy month" counters (year*12 + month).  *
@@ -1382,18 +1383,24 @@ static std::deque<APItem> _ap_replay_queue;
  * updated immediately; only the per-company DoCommand is deferred.
  * Note: _ap_deferred_cmds is declared near the top of the file. */
 
+static void AP_ClearQueuedItemState()
+{
+	_ap_pending_items.clear();
+	_ap_replay_queue.clear();
+	_ap_deferred_cmds.clear();
+	_ap_pending_vehicle_news.clear();
+	_ap_pending_cargo_news.clear();
+}
+
 static void AP_ResetProgressStateForNewSlot()
 {
 	_ap_completed_mission_locations.clear();
 	_ap_purchased_shop_locations.clear();
 	_ap_goal_sent = false;
-	_ap_pending_items.clear();
-	_ap_replay_queue.clear();
-	_ap_deferred_cmds.clear();
+	AP_ClearQueuedItemState();
 	_ap_received_item_counts.clear();
 	_ap_unlocked_tier_counts.clear();
 	_ap_starting_grants_applied_slot.clear();
-	_ap_saved_items_index = 0;
 	AP_InitSessionStats();
 }
 
@@ -1552,18 +1559,25 @@ static void AP_OnSlotData(const APSlotData &sd)
 	      sd.missions.size(), sd.start_year);
 
 	const std::string incoming_slot_identity = AP_GetCurrentConnectionSlotIdentity();
-	if (!_ap_progress_slot_identity.empty() &&
+	const bool slot_changed = !_ap_progress_slot_identity.empty() &&
 	    !incoming_slot_identity.empty() &&
-	    _ap_progress_slot_identity != incoming_slot_identity) {
+	    _ap_progress_slot_identity != incoming_slot_identity;
+	if (slot_changed) {
 		AP_WARN(fmt::format("Slot changed ({} -> {}); clearing cached AP progress state.",
 		    _ap_progress_slot_identity, incoming_slot_identity));
 		AP_ResetProgressStateForNewSlot();
+		_ap_saved_items_index = 0;
 	}
 	if (!incoming_slot_identity.empty()) {
 		_ap_progress_slot_identity = incoming_slot_identity;
 	}
 
 	_ap_pending_sd      = sd;
+
+	/* Keep the replay queue intact for a same-slot save/load reconnect so the
+	 * client can restore unlock state (including company colours) from the AP
+	 * replay stream.  Only a true slot change or explicit leave-game reset should
+	 * discard queued items. */
 
 	/* Determine whether this AP game has any company colour items in the pool */
 	_ap_colour_items_in_pool = false;
@@ -1626,11 +1640,14 @@ static void AP_OnItemReceived(const APItem &item)
 	_ap_received_item_counts[item.item_name]++;
 	_ap_status_generation.fetch_add(1, std::memory_order_relaxed);
 
-	/* Persist items_received_index in the savegame variable so future reconnects
-	 * correctly mark these items as is_replay=true. */
+	/* Persist items_received_index in memory and the connection config so a full
+	 * restart can restore the same high-water mark before the first connect. */
 	if (!is_replay && _ap_client != nullptr) {
 		const int64_t idx = _ap_client->GetReceivedItemsIndex();
-		if (idx > 0) _ap_saved_items_index = idx;
+		if (idx > 0) {
+			_ap_saved_items_index = idx;
+			AP_SaveConnectionConfig();
+		}
 	}
 
 	/* Progressive vehicle unlock — delegate entirely to EnableEngineForCompany */
@@ -2892,6 +2909,7 @@ void AP_SaveConnectionConfig()
 	fmt::print(f, "slot={}\n", _ap_last_slot);
 	fmt::print(f, "pass={}\n", _ap_last_pass);
 	fmt::print(f, "ssl={}\n", _ap_last_ssl ? 1 : 0);
+	fmt::print(f, "items_index={}\n", _ap_saved_items_index);
 	fclose(f);
 }
 
@@ -2919,6 +2937,11 @@ void AP_LoadConnectionConfig()
 		else if (key == "slot") _ap_last_slot = val;
 		else if (key == "pass") _ap_last_pass = val;
 		else if (key == "ssl") _ap_last_ssl = (val == "1");
+		else if (key == "items_index") {
+			int64_t idx = 0;
+			std::from_chars(val.data(), val.data() + val.size(), idx);
+			if (idx > 0) _ap_saved_items_index = idx;
+		}
 	}
 	fclose(f);
 }

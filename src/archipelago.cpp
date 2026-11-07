@@ -1172,42 +1172,42 @@ void ArchipelagoClient::ProcessAPMessage(const std::string &text)
 						/* Resolve item ID → human name, falling back to part-provided name or per-game DataPackage table */
 						auto iid_opt = ParseInteger<int64_t>(ptext);
 						if (iid_opt.has_value()) {
-							auto it = current_sd.item_id_to_name.find(*iid_opt);
-							if (it != current_sd.item_id_to_name.end()) {
-								ptext = it->second;
+							bool resolved = false;
+							if (part.contains("item_name") && part["item_name"].is_string() && !part["item_name"].get<std::string>().empty()) {
+								ptext = part["item_name"].get<std::string>();
+								resolved = true;
+							}
+
+							/* Resolve against the item's game, not this connection's slot map. */
+							std::string game_key;
+							if (part.contains("game") && part["game"].is_string()) {
+								game_key = part["game"].get<std::string>();
 							} else {
-								/* Prefer an explicit item_name field from the server if present */
-								if (part.contains("item_name") && part["item_name"].is_string() && !part["item_name"].get<std::string>().empty()) {
-									ptext = part["item_name"].get<std::string>();
-								} else {
-									/* Try per-game map: prefer part['game'] if supplied, else use part['player']->player_id_to_game */
-									std::string game_key;
-									if (part.contains("game") && part["game"].is_string()) {
-										game_key = part["game"].get<std::string>();
-									} else {
-										int64_t item_player = part.value("player", int64_t(0));
-										auto pg = player_id_to_game.find(item_player);
-										if (pg != player_id_to_game.end()) game_key = pg->second;
-									}
-									if (!game_key.empty()) {
-										auto gm = game_item_id_to_name.find(game_key);
-										if (gm != game_item_id_to_name.end()) {
-											auto nm = gm->second.find(*iid_opt);
-											if (nm != gm->second.end()) {
-												ptext = nm->second;
-											} else {
-												/* No mapping for this id in the game's datamap */
-												Debug(misc, 1, "[AP] DataPackage: no item name for id {} in game {}", *iid_opt, game_key);
-												ptext = part.value("item_name", "an item");
-											}
-										} else {
-											Debug(misc, 1, "[AP] DataPackage: no game '{}' available for item id {}", game_key, *iid_opt);
-											ptext = part.value("item_name", "an item");
-										}
-									} else {
-										ptext = part.value("item_name", "an item");
+								int64_t item_player = part.value("player", int64_t(0));
+								auto pg = player_id_to_game.find(item_player);
+								if (pg != player_id_to_game.end()) game_key = pg->second;
+							}
+
+							if (!resolved && game_key == "OpenTTD Cargolock") {
+								auto it = current_sd.item_id_to_name.find(*iid_opt);
+								if (it != current_sd.item_id_to_name.end()) {
+									ptext = it->second;
+									resolved = true;
+								}
+							}
+							if (!resolved && !game_key.empty()) {
+								auto gm = game_item_id_to_name.find(game_key);
+								if (gm != game_item_id_to_name.end()) {
+									auto nm = gm->second.find(*iid_opt);
+									if (nm != gm->second.end()) {
+										ptext = nm->second;
+										resolved = true;
 									}
 								}
+							}
+							if (!resolved) {
+								Debug(misc, 1, "[AP] DataPackage: no item name for id {} in game '{}'", *iid_opt, game_key);
+								ptext = "an item";
 							}
 						}
 						text_out += ptext;

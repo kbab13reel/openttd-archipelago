@@ -713,6 +713,7 @@ struct ArchipelagoMissionsWindow : public Window {
 		if (key == "road_vehicle") return "Road Vehicle";
 		if (key == "ship")         return "Ship";
 		if (key == "aircraft")     return "Aircraft";
+		if (key == "tram")         return "Tram";
 		return key;
 	}
 
